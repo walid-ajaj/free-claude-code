@@ -63,7 +63,8 @@ SECTIONS: tuple[ConfigSectionSpec, ...] = (
     ConfigSectionSpec(
         "thinking",
         "Thinking",
-        "Global and tier-specific thinking behavior.",
+        "Effort levels selected in Claude Code, Codex, or Pi are translated "
+        "automatically; these controls only enable or disable reasoning.",
     ),
     ConfigSectionSpec(
         "runtime",

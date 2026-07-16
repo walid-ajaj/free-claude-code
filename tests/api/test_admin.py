@@ -177,6 +177,13 @@ def test_admin_config_masks_secrets_and_exposes_manifest(monkeypatch, tmp_path):
     assert "CLAUDE_WORKSPACE" not in keys
     assert "CLAUDE_CLI_BIN" not in keys
     assert "LOG_FILE" not in keys
+    thinking_section = next(
+        section for section in body["sections"] if section["id"] == "thinking"
+    )
+    assert thinking_section["description"] == (
+        "Effort levels selected in Claude Code, Codex, or Pi are translated "
+        "automatically; these controls only enable or disable reasoning."
+    )
     auth_field = next(
         field for field in body["fields"] if field["key"] == "ANTHROPIC_AUTH_TOKEN"
     )

@@ -2,7 +2,7 @@
 
 import asyncio
 from collections.abc import AsyncIterator, Callable
-from dataclasses import dataclass, replace
+from dataclasses import dataclass
 
 from fastapi.responses import JSONResponse, Response
 from loguru import logger
@@ -34,6 +34,7 @@ from free_claude_code.api.web_tools.streaming import stream_web_server_tool_resp
 from free_claude_code.application.errors import ApplicationError, InvalidRequestError
 from free_claude_code.application.execution import ProviderExecutor, TokenCounter
 from free_claude_code.application.ports import ProviderResolver
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.application.routing import ModelRouter, RoutedMessagesRequest
 from free_claude_code.config.settings import Settings
 from free_claude_code.core.anthropic import (
@@ -271,7 +272,7 @@ class MessagesHandler:
     ) -> RoutedMessagesRequest:
         if not is_safety_classifier_request(routed.request):
             return routed
-        changed = routed.resolved.thinking_enabled
+        changed = routed.reasoning.enabled
         trace_event(
             stage="routing",
             event="free_claude_code.api.optimization.safety_classifier_no_thinking",
@@ -283,7 +284,8 @@ class MessagesHandler:
             return routed
         return RoutedMessagesRequest(
             request=routed.request,
-            resolved=replace(routed.resolved, thinking_enabled=False),
+            resolved=routed.resolved,
+            reasoning=ReasoningPolicy.off(),
         )
 
     def _run_message_intercepts(

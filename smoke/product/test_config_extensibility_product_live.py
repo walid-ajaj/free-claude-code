@@ -81,11 +81,11 @@ def test_per_model_thinking_config_e2e(smoke_config: SmokeConfig, tmp_path) -> N
         "from free_claude_code.config.settings import Settings; "
         "s=Settings(); "
         "r=ModelRouter(s); "
-        "print(r.resolve('claude-fable-5').thinking_enabled); "
-        "print(r.resolve('claude-opus-4-20250514').thinking_enabled); "
-        "print(r.resolve('claude-sonnet-4-20250514').thinking_enabled); "
-        "print(r.resolve('claude-haiku-4-20250514').thinking_enabled); "
-        "print(r.resolve('unknown-model').thinking_enabled)"
+        "print(r.resolve('claude-fable-5').reasoning_allowed); "
+        "print(r.resolve('claude-opus-4-20250514').reasoning_allowed); "
+        "print(r.resolve('claude-sonnet-4-20250514').reasoning_allowed); "
+        "print(r.resolve('claude-haiku-4-20250514').reasoning_allowed); "
+        "print(r.resolve('unknown-model').reasoning_allowed)"
     )
     result = run_captured_text(
         cmd_python_c(script),

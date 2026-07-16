@@ -12,11 +12,13 @@ heuristic recovery on top.
 """
 
 import time
+from typing import Any
 
 import httpx
 from loguru import logger
 
 from free_claude_code.application.errors import InvalidRequestError
+from free_claude_code.application.reasoning import ReasoningEffort, ReasoningPolicy
 from free_claude_code.core.anthropic import (
     ReasoningReplayMode,
     build_base_request_body,
@@ -31,6 +33,10 @@ from free_claude_code.providers.openai_chat import (
     OpenAIChatRequestPolicy,
 )
 from free_claude_code.providers.rate_limit import ProviderRateLimiter
+from free_claude_code.providers.reasoning import (
+    reasoning_budget_tokens,
+    reasoning_effort,
+)
 
 _PROFILE = OpenAIChatProfile(OpenAIChatRequestPolicy(provider_name="LMSTUDIO"))
 
@@ -54,7 +60,10 @@ class LMStudioProvider(OpenAIChatProvider):
         self._loaded_context_cache: tuple[float, int | None] = (0.0, None)
 
     def _build_request_body(
-        self, request: MessagesRequest, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> dict:
         """Build an OpenAI chat body from the Anthropic request.
 
@@ -64,17 +73,22 @@ class LMStudioProvider(OpenAIChatProvider):
         back via ``reasoning_content``/``<think>`` parsing in the provider.
         """
         try:
-            return build_base_request_body(
+            body = build_base_request_body(
                 request,
                 reasoning_replay=ReasoningReplayMode.DISABLED,
             )
         except OpenAIConversionError as exc:
             raise InvalidRequestError(str(exc)) from exc
+        _apply_lmstudio_reasoning(body, reasoning)
+        return body
 
     def preflight_stream(
-        self, request: MessagesRequest, *, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> None:
-        super().preflight_stream(request, thinking_enabled=thinking_enabled)
+        super().preflight_stream(request, reasoning=reasoning)
         self._preflight_context_budget(request)
 
     def _preflight_context_budget(self, request: MessagesRequest) -> None:
@@ -125,3 +139,30 @@ class LMStudioProvider(OpenAIChatProvider):
             value = None
         self._loaded_context_cache = (time.monotonic(), value)
         return value
+
+
+def _apply_lmstudio_reasoning(
+    body: dict[str, Any],
+    reasoning: ReasoningPolicy,
+) -> None:
+    """Encode LM Studio's documented effort or explicit token budget."""
+    if not reasoning.enabled:
+        body["reasoning_effort"] = "none"
+        return
+
+    budget = reasoning_budget_tokens(reasoning)
+    if reasoning.budget_tokens is not None and budget is not None:
+        extra_body = body.setdefault("extra_body", {})
+        extra_body["reasoning_tokens"] = budget
+        return
+
+    effort = reasoning_effort(
+        reasoning,
+        (
+            ReasoningEffort.LOW,
+            ReasoningEffort.MEDIUM,
+            ReasoningEffort.HIGH,
+        ),
+    )
+    if effort is not None:
+        body["reasoning_effort"] = effort.value

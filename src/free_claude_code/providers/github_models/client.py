@@ -6,6 +6,7 @@ from typing import Any
 import httpx
 
 from free_claude_code.application.model_metadata import ProviderModelInfo
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.core.anthropic.models import MessagesRequest
 from free_claude_code.providers.base import ProviderConfig
 from free_claude_code.providers.http import maybe_await_aclose
@@ -82,11 +83,14 @@ class GitHubModelsProvider(OpenAIChatProvider):
             await maybe_await_aclose(response)
 
     def _build_request_body(
-        self, request: MessagesRequest, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> dict:
         return build_openai_chat_request_body(
             request,
-            thinking_enabled=self._is_thinking_enabled(request, thinking_enabled),
+            reasoning=reasoning,
             policy=_REQUEST_POLICY,
         )
 

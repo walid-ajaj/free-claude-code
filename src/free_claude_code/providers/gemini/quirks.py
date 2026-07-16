@@ -3,7 +3,9 @@
 from copy import deepcopy
 from typing import Any, cast
 
+from free_claude_code.application.reasoning import ReasoningEffort, ReasoningPolicy
 from free_claude_code.core.anthropic.models import MessagesRequest
+from free_claude_code.providers.reasoning import reasoning_effort
 
 GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator"
 
@@ -11,7 +13,7 @@ GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR = "skip_thought_signature_validator"
 def apply_gemini_request_quirks(
     body: dict[str, Any],
     request_data: MessagesRequest,
-    thinking_enabled: bool,
+    policy: ReasoningPolicy,
     *,
     tool_call_extra_content_by_id: dict[str, dict[str, Any]] | None = None,
 ) -> None:
@@ -21,9 +23,20 @@ def apply_gemini_request_quirks(
     if isinstance(request_extra, dict):
         extra_body.update(deepcopy(request_extra))
 
-    if thinking_enabled:
+    if policy.enabled:
         _apply_thinking_config(extra_body)
-    else:
+        effort = reasoning_effort(
+            policy,
+            (
+                ReasoningEffort.MINIMAL,
+                ReasoningEffort.LOW,
+                ReasoningEffort.MEDIUM,
+                ReasoningEffort.HIGH,
+            ),
+        )
+        if effort is not None:
+            body["reasoning_effort"] = effort.value
+    elif _gemini_reasoning_can_be_disabled(body.get("model")):
         body["reasoning_effort"] = "none"
 
     if extra_body:
@@ -55,6 +68,11 @@ def _apply_thinking_config(extra_body: dict[str, Any]) -> None:
 
 def _is_gemini_3_model(model: Any) -> bool:
     return "gemini-3" in str(model).lower()
+
+
+def _gemini_reasoning_can_be_disabled(model: Any) -> bool:
+    lowered = str(model).lower()
+    return "gemini-2.5" in lowered and "pro" not in lowered
 
 
 def _thought_signature_from_extra_content(extra_content: Any) -> str | None:

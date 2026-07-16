@@ -4,6 +4,7 @@ from typing import Any
 
 from loguru import logger
 
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.core.anthropic.models import MessagesRequest
 from free_claude_code.providers.base import ProviderConfig
 from free_claude_code.providers.openai_chat import (
@@ -36,18 +37,19 @@ class MistralProvider(OpenAIChatProvider):
         )
 
     def _build_request_body(
-        self, request: MessagesRequest, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> dict:
-        effective_thinking_enabled = self._is_thinking_enabled(
-            request, thinking_enabled
-        )
         body = build_openai_chat_request_body(
             request,
-            thinking_enabled=effective_thinking_enabled,
+            reasoning=reasoning,
             policy=_REQUEST_POLICY,
         )
         apply_mistral_reasoning_request_shape(
-            body, thinking_enabled=effective_thinking_enabled
+            body,
+            reasoning=reasoning,
         )
         return body
 

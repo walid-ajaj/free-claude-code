@@ -14,6 +14,8 @@ from free_claude_code.config.settings import Settings
 from free_claude_code.core.anthropic import MessagesRequest, TokenCountRequest
 from free_claude_code.core.gateway_model_ids import decode_gateway_model_id
 
+from .reasoning import ReasoningPolicy, resolve_reasoning_policy
+
 
 @dataclass(frozen=True, slots=True)
 class ResolvedModel:
@@ -21,13 +23,14 @@ class ResolvedModel:
     provider_id: str
     provider_model: str
     provider_model_ref: str
-    thinking_enabled: bool
+    reasoning_allowed: bool
 
 
 @dataclass(frozen=True, slots=True)
 class RoutedMessagesRequest:
     request: MessagesRequest
     resolved: ResolvedModel
+    reasoning: ReasoningPolicy
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,31 +49,31 @@ class ModelRouter:
         (
             direct_provider_id,
             direct_provider_model,
-            force_thinking_enabled,
+            force_reasoning_allowed,
         ) = self._direct_provider_model(claude_model_name)
         if direct_provider_id is not None and direct_provider_model is not None:
-            thinking_enabled = (
-                force_thinking_enabled
-                if force_thinking_enabled is not None
-                else self._resolve_thinking(direct_provider_model)
+            reasoning_allowed = (
+                force_reasoning_allowed
+                if force_reasoning_allowed is not None
+                else self._resolve_reasoning_allowed(direct_provider_model)
             )
             logger.debug(
-                "MODEL DIRECT: '{}' -> provider='{}' model='{}' thinking={}",
+                "MODEL DIRECT: '{}' -> provider='{}' model='{}' reasoning_allowed={}",
                 claude_model_name,
                 direct_provider_id,
                 direct_provider_model,
-                thinking_enabled,
+                reasoning_allowed,
             )
             return ResolvedModel(
                 original_model=claude_model_name,
                 provider_id=direct_provider_id,
                 provider_model=direct_provider_model,
                 provider_model_ref=claude_model_name,
-                thinking_enabled=thinking_enabled,
+                reasoning_allowed=reasoning_allowed,
             )
 
         provider_model_ref = self._resolve_model_ref(claude_model_name)
-        thinking_enabled = self._resolve_thinking(claude_model_name)
+        reasoning_allowed = self._resolve_reasoning_allowed(claude_model_name)
         provider_id = parse_provider_type(provider_model_ref)
         self._validate_provider_id(provider_id)
         provider_model = parse_model_name(provider_model_ref)
@@ -83,7 +86,7 @@ class ModelRouter:
             provider_id=provider_id,
             provider_model=provider_model,
             provider_model_ref=provider_model_ref,
-            thinking_enabled=thinking_enabled,
+            reasoning_allowed=reasoning_allowed,
         )
 
     @staticmethod
@@ -101,7 +104,7 @@ class ModelRouter:
             return (
                 decoded.provider_id,
                 decoded.provider_model,
-                decoded.force_thinking_enabled,
+                decoded.force_reasoning_allowed,
             )
 
         provider_id, separator, provider_model = model_name.partition("/")
@@ -127,8 +130,8 @@ class ModelRouter:
             return self._settings.model_sonnet
         return self._settings.model
 
-    def _resolve_thinking(self, claude_model_name: str) -> bool:
-        """Resolve whether thinking is enabled for an incoming Claude model name."""
+    def _resolve_reasoning_allowed(self, claude_model_name: str) -> bool:
+        """Resolve whether the selected route permits reasoning."""
 
         name_lower = claude_model_name.lower()
         if "fable" in name_lower and self._settings.enable_fable_thinking is not None:
@@ -148,7 +151,14 @@ class ModelRouter:
         resolved = self.resolve(request.model)
         routed = request.model_copy(deep=True)
         routed.model = resolved.provider_model
-        return RoutedMessagesRequest(request=routed, resolved=resolved)
+        return RoutedMessagesRequest(
+            request=routed,
+            resolved=resolved,
+            reasoning=resolve_reasoning_policy(
+                routed,
+                route_enabled=resolved.reasoning_allowed,
+            ),
+        )
 
     def resolve_token_count_request(
         self, request: TokenCountRequest

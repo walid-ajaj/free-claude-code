@@ -8,6 +8,7 @@ import openai
 import pytest
 from httpx import Request, Response
 
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.core.anthropic.models import MessagesRequest
 from free_claude_code.core.anthropic.stream_contracts import parse_sse_text
 from free_claude_code.providers.base import ProviderConfig
@@ -23,7 +24,7 @@ from free_claude_code.providers.openai_chat.usage import (
     usage_int,
 )
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter
+from tests.providers.support import REASONING_ON, passthrough_rate_limiter
 
 
 class _UsageTestProvider(OpenAIChatProvider):
@@ -42,7 +43,10 @@ class _UsageTestProvider(OpenAIChatProvider):
         )
 
     def _build_request_body(
-        self, request: MessagesRequest, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> dict:
         return {"model": request.model, "messages": [{"role": "user", "content": "x"}]}
 
@@ -170,7 +174,10 @@ async def test_openai_chat_stream_requests_usage_and_uses_provider_prompt_tokens
 
     with patch.object(provider._client.chat.completions, "create", create):
         events = [
-            event async for event in provider.stream_response(request, input_tokens=7)
+            event
+            async for event in provider.stream_response(
+                request, input_tokens=7, reasoning=REASONING_ON
+            )
         ]
 
     create.assert_awaited_once()

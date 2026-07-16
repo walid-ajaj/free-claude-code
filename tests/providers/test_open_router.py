@@ -16,7 +16,7 @@ from free_claude_code.providers.base import ProviderConfig
 from free_claude_code.providers.open_router import OpenRouterProvider
 from free_claude_code.providers.openai_chat import OpenAIChatProvider
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter
+from tests.providers.support import passthrough_rate_limiter, reasoning_for
 
 
 class AsyncStream:
@@ -77,7 +77,11 @@ def test_init_uses_openai_chat_provider(open_router_provider):
 
 
 def test_build_request_body_uses_openai_chat_shape(open_router_provider):
-    body = open_router_provider._build_request_body(make_request())
+    request = make_request()
+    body = open_router_provider._build_request_body(
+        request,
+        reasoning=reasoning_for(request),
+    )
 
     assert body["model"] == "moonshotai/kimi-k2.6:free"
     assert body["temperature"] == 0.5
@@ -90,7 +94,11 @@ def test_build_request_body_uses_openai_chat_shape(open_router_provider):
 
 
 def test_build_request_body_default_max_tokens(open_router_provider):
-    body = open_router_provider._build_request_body(make_request(max_tokens=None))
+    request = make_request(max_tokens=None)
+    body = open_router_provider._build_request_body(
+        request,
+        reasoning=reasoning_for(request),
+    )
 
     assert body["max_tokens"] == ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS
 
@@ -99,35 +107,46 @@ def test_openrouter_extra_body_rejects_overriding_reserved_fields(
     open_router_provider,
 ):
     with pytest.raises(InvalidRequestError, match="model"):
+        request = make_request(extra_body={"model": "hijack"})
         open_router_provider._build_request_body(
-            make_request(extra_body={"model": "hijack"})
+            request,
+            reasoning=reasoning_for(request),
         )
 
 
 def test_openrouter_extra_body_allows_provider_keys(open_router_provider):
+    request = make_request(extra_body={"transforms": ["no-web"], "plugins": []})
     body = open_router_provider._build_request_body(
-        make_request(extra_body={"transforms": ["no-web"], "plugins": []}),
-        thinking_enabled=False,
+        request,
+        reasoning=reasoning_for(request, route_enabled=False),
     )
 
-    assert body["extra_body"] == {"transforms": ["no-web"], "plugins": []}
+    assert body["extra_body"] == {
+        "transforms": ["no-web"],
+        "plugins": [],
+        "reasoning": {"enabled": False},
+    }
 
 
 def test_build_request_body_omits_reasoning_when_thinking_disabled(
     open_router_provider,
 ):
+    request = make_request(thinking={"type": "disabled"})
     body = open_router_provider._build_request_body(
-        make_request(thinking={"type": "disabled"})
+        request,
+        reasoning=reasoning_for(request),
     )
 
-    assert "extra_body" not in body
+    assert body["extra_body"]["reasoning"] == {"enabled": False}
 
 
 def test_build_request_body_maps_thinking_budget_to_reasoning_max_tokens(
     open_router_provider,
 ):
+    request = make_request(thinking={"type": "enabled", "budget_tokens": 4096})
     body = open_router_provider._build_request_body(
-        make_request(thinking={"type": "enabled", "budget_tokens": 4096})
+        request,
+        reasoning=reasoning_for(request),
     )
 
     assert body["extra_body"]["reasoning"] == {"enabled": True, "max_tokens": 4096}
@@ -156,7 +175,10 @@ def test_build_request_body_replays_openrouter_reasoning_details(
         }
     )
 
-    body = open_router_provider._build_request_body(request)
+    body = open_router_provider._build_request_body(
+        request,
+        reasoning=reasoning_for(request),
+    )
 
     assistant = next(msg for msg in body["messages"] if msg["role"] == "assistant")
     assert assistant["reasoning_details"] == [detail]
@@ -165,6 +187,7 @@ def test_build_request_body_replays_openrouter_reasoning_details(
 @pytest.mark.asyncio
 async def test_stream_maps_reasoning_content_and_details(open_router_provider):
     redacted = {"type": "reasoning.encrypted", "data": "opaque"}
+    request = make_request()
     stream = AsyncStream(
         [
             _chunk(reasoning_content="plan "),
@@ -180,7 +203,10 @@ async def test_stream_maps_reasoning_content_and_details(open_router_provider):
     ):
         events = [
             event
-            async for event in open_router_provider.stream_response(make_request())
+            async for event in open_router_provider.stream_response(
+                request,
+                reasoning=reasoning_for(request),
+            )
         ]
 
     event_text = "".join(events)

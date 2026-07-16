@@ -6,12 +6,28 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from free_claude_code.application.errors import InvalidRequestError
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.config.constants import ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS
 from free_claude_code.core.anthropic import ReasoningReplayMode
 from free_claude_code.core.anthropic.models import MessagesRequest
 
 from .base_url import openai_v1_base_url
 from .extra_body import validate_extra_body_does_not_override_canonical_fields
+from .reasoning import (
+    encode_cerebras_reasoning,
+    encode_cohere_reasoning,
+    encode_fireworks_reasoning,
+    encode_groq_reasoning,
+    encode_huggingface_reasoning,
+    encode_kimi_reasoning,
+    encode_llamacpp_reasoning,
+    encode_minimax_reasoning,
+    encode_ollama_reasoning,
+    encode_sambanova_reasoning,
+    encode_vercel_reasoning,
+    encode_wafer_reasoning,
+    encode_zai_reasoning,
+)
 from .request_policy import OpenAIChatPostprocessor, OpenAIChatRequestPolicy
 
 
@@ -21,6 +37,7 @@ class OpenAIChatProfile:
 
     request_policy: OpenAIChatRequestPolicy
     postprocessors: tuple[OpenAIChatPostprocessor, ...] = ()
+    reasoning_encoder: OpenAIChatPostprocessor | None = None
     normalize_base_url: bool = False
     reasoning_delta_field: Literal["reasoning_content", "reasoning"] = (
         "reasoning_content"
@@ -37,12 +54,20 @@ class OpenAIChatProfile:
         value = getattr(delta, self.reasoning_delta_field, None)
         return value if isinstance(value, str) else None
 
+    @property
+    def request_postprocessors(self) -> tuple[OpenAIChatPostprocessor, ...]:
+        """Return generic transforms followed by the provider reasoning encoder."""
+        if self.reasoning_encoder is None:
+            return self.postprocessors
+        return (*self.postprocessors, self.reasoning_encoder)
+
 
 def _apply_cohere_request_quirks(
-    body: dict[str, Any], request: MessagesRequest, thinking_enabled: bool
+    body: dict[str, Any],
+    request: MessagesRequest,
+    _policy: ReasoningPolicy,
 ) -> None:
     _merge_allowed_cohere_extra_body(body, request.extra_body)
-    body["reasoning_effort"] = "high" if thinking_enabled else "none"
 
 
 _COHERE_EXTRA_BODY_KEYS = frozenset(
@@ -72,57 +97,6 @@ def _merge_allowed_cohere_extra_body(body: dict[str, Any], extra_body: Any) -> N
     body.update({str(key): deepcopy(value) for key, value in extra_body.items()})
 
 
-def _apply_kimi_thinking_policy(
-    body: dict[str, Any], _request: MessagesRequest, thinking_enabled: bool
-) -> None:
-    if thinking_enabled:
-        return
-    extra_body = body.setdefault("extra_body", {})
-    if isinstance(extra_body, dict):
-        extra_body["thinking"] = {"type": "disabled"}
-
-
-def _apply_minimax_thinking_policy(
-    body: dict[str, Any], _request: MessagesRequest, thinking_enabled: bool
-) -> None:
-    extra_body = body.setdefault("extra_body", {})
-    if not isinstance(extra_body, dict):
-        return
-    extra_body["reasoning_split"] = True
-    extra_body["thinking"] = (
-        {"type": "adaptive"} if thinking_enabled else {"type": "disabled"}
-    )
-
-
-def _apply_ollama_thinking_policy(
-    body: dict[str, Any], _request: MessagesRequest, thinking_enabled: bool
-) -> None:
-    body["reasoning_effort"] = "high" if thinking_enabled else "none"
-
-
-def _apply_wafer_thinking_policy(
-    body: dict[str, Any], _request: MessagesRequest, thinking_enabled: bool
-) -> None:
-    extra_body = body.setdefault("extra_body", {})
-    if isinstance(extra_body, dict):
-        extra_body["thinking"] = (
-            {"type": "enabled"} if thinking_enabled else {"type": "disabled"}
-        )
-
-
-def _apply_zai_thinking_policy(
-    body: dict[str, Any], _request: MessagesRequest, thinking_enabled: bool
-) -> None:
-    extra_body = body.setdefault("extra_body", {})
-    if not isinstance(extra_body, dict):
-        return
-    extra_body["thinking"] = (
-        {"type": "enabled", "clear_thinking": False}
-        if thinking_enabled
-        else {"type": "disabled"}
-    )
-
-
 OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
     "mistral_codestral": OpenAIChatProfile(
         OpenAIChatRequestPolicy(provider_name="CODESTRAL")
@@ -132,14 +106,16 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
         OpenAIChatRequestPolicy(provider_name="OPENCODE_GO")
     ),
     "vercel": OpenAIChatProfile(
-        OpenAIChatRequestPolicy(provider_name="VERCEL", include_extra_body=True)
+        OpenAIChatRequestPolicy(provider_name="VERCEL", include_extra_body=True),
+        reasoning_encoder=encode_vercel_reasoning,
     ),
     "huggingface": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
             provider_name="HUGGINGFACE",
             include_extra_body=True,
             reasoning_replay=ReasoningReplayMode.DISABLED,
-        )
+        ),
+        reasoning_encoder=encode_huggingface_reasoning,
     ),
     "cohere": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
@@ -161,13 +137,14 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
             ),
         ),
         postprocessors=(_apply_cohere_request_quirks,),
+        reasoning_encoder=encode_cohere_reasoning,
     ),
     "wafer": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
             provider_name="WAFER",
             default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
         ),
-        postprocessors=(_apply_wafer_thinking_policy,),
+        reasoning_encoder=encode_wafer_reasoning,
     ),
     "kimi": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
@@ -177,7 +154,7 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
             ),
             default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
         ),
-        postprocessors=(_apply_kimi_thinking_policy,),
+        reasoning_encoder=encode_kimi_reasoning,
     ),
     "minimax": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
@@ -185,14 +162,15 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
             default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
             max_tokens_field="max_completion_tokens",
         ),
-        postprocessors=(_apply_minimax_thinking_policy,),
+        reasoning_encoder=encode_minimax_reasoning,
     ),
     "cerebras": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
             provider_name="CEREBRAS",
             include_extra_body=True,
             max_tokens_field="max_completion_tokens",
-        )
+        ),
+        reasoning_encoder=encode_cerebras_reasoning,
     ),
     "groq": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
@@ -202,10 +180,12 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
             strip_message_names=True,
             unsupported_body_keys=frozenset({"logprobs", "logit_bias", "top_logprobs"}),
             normalize_n_to_one=True,
-        )
+        ),
+        reasoning_encoder=encode_groq_reasoning,
     ),
     "sambanova": OpenAIChatProfile(
-        OpenAIChatRequestPolicy(provider_name="SAMBANOVA", include_extra_body=True)
+        OpenAIChatRequestPolicy(provider_name="SAMBANOVA", include_extra_body=True),
+        reasoning_encoder=encode_sambanova_reasoning,
     ),
     "fireworks": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
@@ -213,7 +193,8 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
             include_extra_body=True,
             extra_body_validator=validate_extra_body_does_not_override_canonical_fields,
             default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
-        )
+        ),
+        reasoning_encoder=encode_fireworks_reasoning,
     ),
     "zai": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
@@ -223,7 +204,7 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
             ),
             default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
         ),
-        postprocessors=(_apply_zai_thinking_policy,),
+        reasoning_encoder=encode_zai_reasoning,
     ),
     "ollama_cloud": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
@@ -231,7 +212,7 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
             default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
             reasoning_replay=ReasoningReplayMode.REASONING,
         ),
-        postprocessors=(_apply_ollama_thinking_policy,),
+        reasoning_encoder=encode_ollama_reasoning,
         reasoning_delta_field="reasoning",
     ),
     "llamacpp": OpenAIChatProfile(
@@ -239,13 +220,17 @@ OPENAI_CHAT_PROFILES: dict[str, OpenAIChatProfile] = {
             provider_name="LLAMACPP",
             default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
         ),
+        reasoning_encoder=encode_llamacpp_reasoning,
         normalize_base_url=True,
     ),
     "ollama": OpenAIChatProfile(
         OpenAIChatRequestPolicy(
             provider_name="OLLAMA",
             default_max_tokens=ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKENS,
+            reasoning_replay=ReasoningReplayMode.REASONING,
         ),
+        reasoning_encoder=encode_ollama_reasoning,
         normalize_base_url=True,
+        reasoning_delta_field="reasoning",
     ),
 }

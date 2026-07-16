@@ -5,8 +5,10 @@ from copy import deepcopy
 from typing import Any
 
 
-def clone_body_without_reasoning_budget(body: dict[str, Any]) -> dict[str, Any] | None:
-    """Clone a request body and strip only reasoning_budget fields."""
+def clone_body_without_reasoning_budget_controls(
+    body: dict[str, Any],
+) -> dict[str, Any] | None:
+    """Clone a request body and strip optional NIM reasoning-budget controls."""
     return _clone_strip_extra_body(body, _strip_reasoning_budget_fields)
 
 
@@ -42,12 +44,18 @@ def _clone_strip_extra_body(
 
 def _strip_reasoning_budget_fields(extra_body: dict[str, Any]) -> bool:
     removed = extra_body.pop("reasoning_budget", None) is not None
-    chat_template_kwargs = extra_body.get("chat_template_kwargs")
-    if (
-        isinstance(chat_template_kwargs, dict)
-        and chat_template_kwargs.pop("reasoning_budget", None) is not None
-    ):
+    if extra_body.pop("thinking_token_budget", None) is not None:
         removed = True
+    chat_template_kwargs = extra_body.get("chat_template_kwargs")
+    if isinstance(chat_template_kwargs, dict):
+        for key in ("reasoning_budget", "thinking_token_budget", "low_effort"):
+            if chat_template_kwargs.pop(key, None) is not None:
+                removed = True
+    nvext = extra_body.get("nvext")
+    if isinstance(nvext, dict) and nvext.pop("max_thinking_tokens", None) is not None:
+        removed = True
+        if not nvext:
+            extra_body.pop("nvext", None)
     return removed
 
 

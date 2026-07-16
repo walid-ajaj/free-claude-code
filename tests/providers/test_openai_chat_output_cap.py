@@ -16,7 +16,11 @@ from free_claude_code.providers.openai_chat.output_cap import (
     parse_output_token_cap,
 )
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter, profiled_provider
+from tests.providers.support import (
+    REASONING_ON,
+    passthrough_rate_limiter,
+    profiled_provider,
+)
 
 
 class _BadRequest(Exception):
@@ -119,7 +123,6 @@ def groq_provider():
             base_url=GROQ_DEFAULT_BASE,
             rate_limit=10,
             rate_window=60,
-            enable_thinking=False,
         ),
         rate_limiter=passthrough_rate_limiter(),
     )
@@ -132,7 +135,8 @@ async def test_create_stream_clamps_and_learns_on_cap_rejection(groq_provider):
             "llama-3.3-70b-versatile",
             max_tokens=64000,
             thinking={"enabled": False},
-        )
+        ),
+        reasoning=REASONING_ON,
     )
     assert body["max_completion_tokens"] == 64000
     model = body["model"]
@@ -156,7 +160,8 @@ async def test_learned_cap_clamps_next_request_without_a_400(groq_provider):
             "llama-3.3-70b-versatile",
             max_tokens=64000,
             thinking={"enabled": False},
-        )
+        ),
+        reasoning=REASONING_ON,
     )
     model = body["model"]
     groq_provider._model_output_caps[model] = 40960
@@ -177,7 +182,8 @@ async def test_unrelated_400_is_not_clamped_and_propagates(groq_provider):
             "llama-3.3-70b-versatile",
             max_tokens=100,
             thinking={"enabled": False},
-        )
+        ),
+        reasoning=REASONING_ON,
     )
     create = AsyncMock(side_effect=_BadRequest("messages: invalid role 'wizard'"))
 

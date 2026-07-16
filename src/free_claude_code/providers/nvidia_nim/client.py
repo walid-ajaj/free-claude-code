@@ -7,6 +7,7 @@ from typing import Any
 import openai
 from loguru import logger
 
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.config.nim import NimSettings
 from free_claude_code.core.anthropic.models import MessagesRequest
 from free_claude_code.core.failures import ExecutionFailure
@@ -24,7 +25,7 @@ from free_claude_code.providers.rate_limit import ProviderRateLimiter
 from .request_options import build_nim_request_body
 from .retry import (
     clone_body_without_chat_template,
-    clone_body_without_reasoning_budget,
+    clone_body_without_reasoning_budget_controls,
     clone_body_without_reasoning_content,
 )
 from .tool_schema import (
@@ -54,13 +55,16 @@ class NvidiaNimProvider(OpenAIChatProvider):
         self._nim_settings = nim_settings
 
     def _build_request_body(
-        self, request: MessagesRequest, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> dict:
         """Internal helper for tests and shared building."""
         return build_nim_request_body(
             request,
             self._nim_settings,
-            thinking_enabled=self._is_thinking_enabled(request, thinking_enabled),
+            reasoning=reasoning,
         )
 
     def _prepare_create_body(self, body: dict[str, Any]) -> dict[str, Any]:
@@ -87,7 +91,7 @@ class NvidiaNimProvider(OpenAIChatProvider):
         if _is_reasoning_budget_rejection(error_text) and (
             bad_request_like or status_code == 500
         ):
-            retry_body = clone_body_without_reasoning_budget(body)
+            retry_body = clone_body_without_reasoning_budget_controls(body)
             if retry_body is None:
                 return None
             logger.warning(
@@ -143,5 +147,7 @@ class NvidiaNimProvider(OpenAIChatProvider):
 def _is_reasoning_budget_rejection(error_text: str) -> bool:
     """Return whether NIM rejected optional thinking budget control."""
     if "reasoning_budget" in error_text:
+        return True
+    if "max_thinking_tokens" in error_text:
         return True
     return "thinking_token_budget" in error_text and "reasoning_config" in error_text

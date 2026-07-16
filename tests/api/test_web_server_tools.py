@@ -22,6 +22,7 @@ from free_claude_code.api.web_tools.outbound import (
 from free_claude_code.api.web_tools.request import is_web_server_tool_request
 from free_claude_code.api.web_tools.streaming import stream_web_server_tool_response
 from free_claude_code.application.errors import InvalidRequestError
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.application.routing import (
     ModelRouter,
     ResolvedModel,
@@ -66,11 +67,15 @@ class FixedProviderModelRouter(ModelRouter):
             provider_id=self._fixed_provider_id,
             provider_model=request.model,
             provider_model_ref=f"{self._fixed_provider_id}/{request.model}",
-            thinking_enabled=False,
+            reasoning_allowed=False,
         )
         routed = request.model_copy(deep=True)
         routed.model = resolved.provider_model
-        return RoutedMessagesRequest(request=routed, resolved=resolved)
+        return RoutedMessagesRequest(
+            request=routed,
+            resolved=resolved,
+            reasoning=ReasoningPolicy.off(),
+        )
 
 
 def test_web_server_tool_not_detected_when_tool_only_listed():

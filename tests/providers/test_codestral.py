@@ -7,7 +7,11 @@ import pytest
 from free_claude_code.config.provider_catalog import CODESTRAL_DEFAULT_BASE
 from free_claude_code.providers.base import ProviderConfig
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter, profiled_provider
+from tests.providers.support import (
+    REASONING_ON,
+    passthrough_rate_limiter,
+    profiled_provider,
+)
 
 
 def make_request(**overrides):
@@ -21,7 +25,6 @@ def codestral_config():
         base_url=CODESTRAL_DEFAULT_BASE,
         rate_limit=10,
         rate_window=60,
-        enable_thinking=True,
     )
 
 
@@ -54,7 +57,7 @@ def test_default_base_url():
 def test_build_request_body_basic(codestral_provider):
     """Basic request body conversion works for Codestral."""
     req = make_request()
-    body = codestral_provider._build_request_body(req)
+    body = codestral_provider._build_request_body(req, reasoning=REASONING_ON)
 
     assert body["model"] == "devstral-small-latest"
     assert body["messages"][0]["role"] == "system"
@@ -69,12 +72,11 @@ def test_build_request_body_global_disable_blocks_reasoning_mapping():
             base_url=CODESTRAL_DEFAULT_BASE,
             rate_limit=10,
             rate_window=60,
-            enable_thinking=False,
         ),
         rate_limiter=passthrough_rate_limiter(),
     )
     req = make_request()
-    body = provider._build_request_body(req)
+    body = provider._build_request_body(req, reasoning=REASONING_ON)
 
     roles = [m.get("role") for m in body.get("messages", [])]
     assert "assistant_reasoning_content" not in roles
@@ -106,7 +108,12 @@ async def test_stream_response_text(codestral_provider):
     ) as mock_create:
         mock_create.return_value = mock_stream()
 
-        events = [event async for event in codestral_provider.stream_response(req)]
+        events = [
+            event
+            async for event in codestral_provider.stream_response(
+                req, reasoning=REASONING_ON
+            )
+        ]
 
         assert any(
             '"text_delta"' in event and "Hello back!" in event for event in events
@@ -139,7 +146,12 @@ async def test_stream_response_reasoning_content(codestral_provider):
     ) as mock_create:
         mock_create.return_value = mock_stream()
 
-        events = [event async for event in codestral_provider.stream_response(req)]
+        events = [
+            event
+            async for event in codestral_provider.stream_response(
+                req, reasoning=REASONING_ON
+            )
+        ]
 
         assert any(
             '"thinking_delta"' in event and "Thinking..." in event for event in events

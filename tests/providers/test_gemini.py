@@ -11,11 +11,16 @@ from free_claude_code.providers.gemini.quirks import (
     GEMINI_SKIP_THOUGHT_SIGNATURE_VALIDATOR,
 )
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter
+from tests.providers.support import (
+    REASONING_OFF,
+    REASONING_ON,
+    passthrough_rate_limiter,
+)
 
 
 def make_request(**overrides):
-    return make_messages_request("models/gemini-3.1-flash-lite", **overrides)
+    model = overrides.pop("model", "models/gemini-3.1-flash-lite")
+    return make_messages_request(model, **overrides)
 
 
 def _simulate_openai_sdk_wire_json(body: dict) -> dict:
@@ -33,7 +38,6 @@ def gemini_config():
         base_url=GEMINI_DEFAULT_BASE,
         rate_limit=10,
         rate_window=60,
-        enable_thinking=True,
     )
 
 
@@ -67,7 +71,7 @@ def test_default_base_url_constant():
 def test_build_request_body_basic(gemini_provider):
     """Basic body conversion attaches Gemini thinking fields when thinking is on."""
     req = make_request()
-    body = gemini_provider._build_request_body(req)
+    body = gemini_provider._build_request_body(req, reasoning=REASONING_ON)
 
     assert body["model"] == "models/gemini-3.1-flash-lite"
     assert body["messages"][0]["role"] == "system"
@@ -88,7 +92,7 @@ def test_build_request_body_sdk_wire_json_has_literal_extra_body(gemini_provider
     """Regression for issue #542: SDK merge must not send top-level google."""
     req = make_request()
 
-    body = gemini_provider._build_request_body(req)
+    body = gemini_provider._build_request_body(req, reasoning=REASONING_ON)
     wire_json = _simulate_openai_sdk_wire_json(body)
 
     assert "reasoning_effort" not in wire_json
@@ -110,12 +114,11 @@ def test_build_request_body_global_disable_sets_reasoning_none():
             base_url=GEMINI_DEFAULT_BASE,
             rate_limit=10,
             rate_window=60,
-            enable_thinking=False,
         ),
         rate_limiter=passthrough_rate_limiter(),
     )
-    req = make_request()
-    body = provider._build_request_body(req)
+    req = make_request(model="models/gemini-2.5-flash")
+    body = provider._build_request_body(req, reasoning=REASONING_OFF)
 
     assert body["reasoning_effort"] == "none"
     roles = [m.get("role") for m in body.get("messages", [])]
@@ -125,7 +128,7 @@ def test_build_request_body_global_disable_sets_reasoning_none():
 def test_build_request_body_preserves_caller_extra_body(gemini_provider):
     req = make_request(extra_body={"metadata": {"user": "u1"}})
 
-    body = gemini_provider._build_request_body(req)
+    body = gemini_provider._build_request_body(req, reasoning=REASONING_ON)
 
     assert "reasoning_effort" not in body
     eb = body.get("extra_body")
@@ -150,7 +153,7 @@ def test_build_request_body_merges_caller_nested_google(gemini_provider):
         }
     )
 
-    body = gemini_provider._build_request_body(req)
+    body = gemini_provider._build_request_body(req, reasoning=REASONING_ON)
 
     assert "reasoning_effort" not in body
     eb = body.get("extra_body")
@@ -199,7 +202,7 @@ def test_build_request_body_preserves_tool_call_extra_content(gemini_provider):
         ],
     )
 
-    body = gemini_provider._build_request_body(req)
+    body = gemini_provider._build_request_body(req, reasoning=REASONING_ON)
 
     tool_call = body["messages"][1]["tool_calls"][0]
     assert tool_call["extra_content"] == {
@@ -239,7 +242,7 @@ def test_build_request_body_uses_cached_tool_call_signature(gemini_provider):
         ],
     )
 
-    body = gemini_provider._build_request_body(req)
+    body = gemini_provider._build_request_body(req, reasoning=REASONING_ON)
 
     tool_call = body["messages"][1]["tool_calls"][0]
     assert tool_call["extra_content"] == {
@@ -289,7 +292,7 @@ def test_build_request_body_adds_gemini3_current_turn_fallback_signature(
         ],
     )
 
-    body = gemini_provider._build_request_body(req)
+    body = gemini_provider._build_request_body(req, reasoning=REASONING_ON)
 
     tool_calls = body["messages"][1]["tool_calls"]
     assert tool_calls[0]["extra_content"] == {
@@ -323,7 +326,12 @@ async def test_stream_response_text(gemini_provider):
     ) as mock_create:
         mock_create.return_value = mock_stream()
 
-        events = [event async for event in gemini_provider.stream_response(req)]
+        events = [
+            event
+            async for event in gemini_provider.stream_response(
+                req, reasoning=REASONING_ON
+            )
+        ]
 
         assert any(
             '"text_delta"' in event and "Hello back!" in event for event in events
@@ -374,7 +382,12 @@ async def test_stream_response_preserves_tool_call_extra_content(gemini_provider
     ) as mock_create:
         mock_create.return_value = mock_stream()
 
-        events = [event async for event in gemini_provider.stream_response(req)]
+        events = [
+            event
+            async for event in gemini_provider.stream_response(
+                req, reasoning=REASONING_ON
+            )
+        ]
 
     tool_starts = [
         event
@@ -414,7 +427,12 @@ async def test_stream_response_reasoning_content(gemini_provider):
     ) as mock_create:
         mock_create.return_value = mock_stream()
 
-        events = [event async for event in gemini_provider.stream_response(req)]
+        events = [
+            event
+            async for event in gemini_provider.stream_response(
+                req, reasoning=REASONING_ON
+            )
+        ]
 
         assert any(
             '"thinking_delta"' in event and "Thinking..." in event for event in events

@@ -7,7 +7,11 @@ import pytest
 from free_claude_code.config.provider_catalog import CEREBRAS_DEFAULT_BASE
 from free_claude_code.providers.base import ProviderConfig
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter, profiled_provider
+from tests.providers.support import (
+    REASONING_ON,
+    passthrough_rate_limiter,
+    profiled_provider,
+)
 
 
 def make_request(**overrides):
@@ -21,7 +25,6 @@ def cerebras_config():
         base_url=CEREBRAS_DEFAULT_BASE,
         rate_limit=10,
         rate_window=60,
-        enable_thinking=True,
     )
 
 
@@ -52,7 +55,7 @@ def test_default_base_url_constant():
 def test_build_request_body_basic(cerebras_provider):
     """Basic request body conversion attaches system message from Claude request."""
     req = make_request()
-    body = cerebras_provider._build_request_body(req)
+    body = cerebras_provider._build_request_body(req, reasoning=REASONING_ON)
 
     assert body["model"] == "llama3.1-8b"
     assert body["messages"][0]["role"] == "system"
@@ -67,12 +70,11 @@ def test_build_request_body_global_disable_blocks_reasoning_mapping():
             base_url=CEREBRAS_DEFAULT_BASE,
             rate_limit=10,
             rate_window=60,
-            enable_thinking=False,
         ),
         rate_limiter=passthrough_rate_limiter(),
     )
     req = make_request()
-    body = provider._build_request_body(req)
+    body = provider._build_request_body(req, reasoning=REASONING_ON)
 
     roles = [m.get("role") for m in body.get("messages", [])]
     assert "assistant_reasoning_content" not in roles
@@ -89,7 +91,7 @@ def test_build_request_body_remaps_max_tokens_preserves_message_name(cerebras_pr
             "max_tokens": 42,
         }
         req = make_request()
-        body = cerebras_provider._build_request_body(req)
+        body = cerebras_provider._build_request_body(req, reasoning=REASONING_ON)
 
     assert body["messages"][0].get("name") == "alice"
     assert body.get("max_tokens") is None
@@ -106,7 +108,9 @@ def test_build_request_body_prefers_existing_max_completion_tokens(cerebras_prov
             "max_completion_tokens": 77,
             "max_tokens": 999,
         }
-        body = cerebras_provider._build_request_body(make_request())
+        body = cerebras_provider._build_request_body(
+            make_request(), reasoning=REASONING_ON
+        )
 
     assert body["max_completion_tokens"] == 77
     assert "max_tokens" not in body
@@ -115,7 +119,7 @@ def test_build_request_body_prefers_existing_max_completion_tokens(cerebras_prov
 def test_build_request_body_preserves_caller_extra_body(cerebras_provider):
     req = make_request(extra_body={"clear_thinking": False})
 
-    body = cerebras_provider._build_request_body(req)
+    body = cerebras_provider._build_request_body(req, reasoning=REASONING_ON)
 
     eb = body.get("extra_body")
     assert isinstance(eb, dict)
@@ -148,7 +152,12 @@ async def test_stream_response_text(cerebras_provider):
     ) as mock_create:
         mock_create.return_value = mock_stream()
 
-        events = [event async for event in cerebras_provider.stream_response(req)]
+        events = [
+            event
+            async for event in cerebras_provider.stream_response(
+                req, reasoning=REASONING_ON
+            )
+        ]
 
         assert any(
             '"text_delta"' in event and "Hello back!" in event for event in events
@@ -181,7 +190,12 @@ async def test_stream_response_reasoning_content(cerebras_provider):
     ) as mock_create:
         mock_create.return_value = mock_stream()
 
-        events = [event async for event in cerebras_provider.stream_response(req)]
+        events = [
+            event
+            async for event in cerebras_provider.stream_response(
+                req, reasoning=REASONING_ON
+            )
+        ]
 
         assert any(
             '"thinking_delta"' in event and "Thinking..." in event for event in events

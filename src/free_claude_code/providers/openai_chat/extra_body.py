@@ -17,6 +17,12 @@ CANONICAL_OPENAI_CHAT_BODY_KEYS = frozenset(
         "stop",
         "stop_sequences",
         "stream_options",
+        "reasoning",
+        "reasoning_effort",
+        "reasoning_tokens",
+        "thinking",
+        "thinking_budget_tokens",
+        "chat_template_kwargs",
     }
 )
 

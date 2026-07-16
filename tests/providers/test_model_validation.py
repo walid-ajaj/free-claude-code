@@ -8,6 +8,7 @@ import pytest
 
 from free_claude_code.application.errors import ApplicationUnavailableError
 from free_claude_code.application.model_metadata import ProviderModelInfo
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.config.nim import NimSettings
 from free_claude_code.config.provider_catalog import (
     DEEPSEEK_DEFAULT_BASE,
@@ -325,9 +326,7 @@ class FakeProvider(BaseProvider):
         self._peer_started = peer_started
         self.cleaned = False
 
-    def preflight_stream(
-        self, request: Any, *, thinking_enabled: bool | None = None
-    ) -> None:
+    def preflight_stream(self, request: Any, *, reasoning: ReasoningPolicy) -> None:
         return None
 
     async def cleanup(self) -> None:
@@ -359,7 +358,7 @@ class FakeProvider(BaseProvider):
         input_tokens: int = 0,
         *,
         request_id: str | None = None,
-        thinking_enabled: bool | None = None,
+        reasoning: ReasoningPolicy,
     ) -> AsyncIterator[str]:
         if False:
             yield ""

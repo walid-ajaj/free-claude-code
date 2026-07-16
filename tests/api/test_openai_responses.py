@@ -593,7 +593,7 @@ def test_create_response_quarantines_malformed_prior_function_call() -> None:
     ("reasoning", "expected_type", "expected_enabled"),
     [
         ({"effort": "none"}, "disabled", False),
-        ({"effort": "low"}, "enabled", True),
+        ({"effort": "low"}, "adaptive", True),
     ],
 )
 def test_create_response_maps_reasoning_effort_to_thinking_request(
@@ -621,6 +621,16 @@ def test_create_response_maps_reasoning_effort_to_thinking_request(
     thinking = provider.requests[0].thinking
     assert thinking.type == expected_type
     assert thinking.enabled is expected_enabled
+    expected_effort = reasoning["effort"]
+    if expected_effort == "none":
+        assert provider.requests[0].output_config is None
+    else:
+        assert provider.requests[0].output_config == {"effort": expected_effort}
+    policy = provider.stream_kwargs[0]["reasoning"]
+    assert policy.enabled is expected_enabled
+    assert (policy.effort.value if policy.effort is not None else None) == (
+        None if expected_effort == "none" else expected_effort
+    )
 
 
 def test_create_response_maps_redacted_thinking_to_encrypted_reasoning() -> None:

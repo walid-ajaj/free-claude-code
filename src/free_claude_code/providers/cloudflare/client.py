@@ -9,6 +9,7 @@ import httpx
 
 from free_claude_code.application.errors import ApplicationUnavailableError
 from free_claude_code.application.model_metadata import ProviderModelInfo
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.config.provider_catalog import CLOUDFLARE_AI_REST_ROOT
 from free_claude_code.core.anthropic.models import MessagesRequest
 from free_claude_code.providers.base import ProviderConfig
@@ -119,21 +120,24 @@ class CloudflareProvider(OpenAIChatProvider):
             await maybe_await_aclose(response)
 
     def _build_request_body(
-        self, request: MessagesRequest, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> dict:
         return build_openai_chat_request_body(
             request,
-            thinking_enabled=self._is_thinking_enabled(request, thinking_enabled),
+            reasoning=reasoning,
             policy=_REQUEST_POLICY,
             postprocessors=(_apply_cloudflare_request_quirks,),
         )
 
     def _handle_extra_reasoning(
-        self, delta: Any, ledger: Any, *, thinking_enabled: bool
+        self, delta: Any, ledger: Any, *, reasoning_enabled: bool
     ) -> Iterator[str]:
         """Map Cloudflare's ``reasoning`` delta field to Anthropic thinking."""
         reasoning = _cloudflare_reasoning(delta)
-        if not thinking_enabled or not reasoning:
+        if not reasoning_enabled or not reasoning:
             return
         yield from ledger.ensure_thinking_block()
         yield ledger.emit_thinking_delta(reasoning)
@@ -143,15 +147,19 @@ class CloudflareProvider(OpenAIChatProvider):
 
 
 def _apply_cloudflare_request_quirks(
-    body: dict[str, Any], _request: MessagesRequest, thinking_enabled: bool
+    body: dict[str, Any],
+    _request: MessagesRequest,
+    policy: ReasoningPolicy,
 ) -> None:
-    """Attach Cloudflare Workers AI chat-template thinking control."""
+    """Attach Cloudflare's existing chat-template thinking control."""
+    if policy.effort is not None:
+        body["reasoning_effort"] = policy.effort.value
     extra_body = body.setdefault("extra_body", {})
     if not isinstance(extra_body, dict):
         return
     chat_template_kwargs = extra_body.setdefault("chat_template_kwargs", {})
     if isinstance(chat_template_kwargs, dict):
-        chat_template_kwargs.setdefault("thinking", thinking_enabled)
+        chat_template_kwargs["thinking"] = policy.enabled
 
 
 def _cloudflare_reasoning(delta: Any) -> str | None:

@@ -15,7 +15,12 @@ from free_claude_code.core.anthropic.stream_contracts import (
 )
 from free_claude_code.providers.base import ProviderConfig
 from free_claude_code.providers.openai_chat import OpenAIChatProvider
-from tests.providers.support import passthrough_rate_limiter, profiled_provider
+from tests.providers.support import (
+    REASONING_OFF,
+    REASONING_ON,
+    passthrough_rate_limiter,
+    profiled_provider,
+)
 
 
 class AsyncStream:
@@ -43,7 +48,6 @@ def minimax_provider():
             base_url=MINIMAX_DEFAULT_BASE,
             rate_limit=10,
             rate_window=60,
-            enable_thinking=True,
         ),
         rate_limiter=passthrough_rate_limiter(),
     )
@@ -95,7 +99,7 @@ def test_build_request_body_uses_adaptive_thinking_and_max_completion_tokens(
         }
     )
 
-    body = minimax_provider._build_request_body(request)
+    body = minimax_provider._build_request_body(request, reasoning=REASONING_ON)
 
     assert body["model"] == "MiniMax-M3"
     assert body["tools"][0]["function"]["name"] == "echo"
@@ -111,7 +115,7 @@ def test_build_request_body_honors_no_thinking(minimax_provider):
         messages=[Message(role="user", content="Hello")],
     )
 
-    body = minimax_provider._build_request_body(request, thinking_enabled=False)
+    body = minimax_provider._build_request_body(request, reasoning=REASONING_OFF)
 
     assert body["extra_body"]["thinking"] == {"type": "disabled"}
 
@@ -148,7 +152,12 @@ async def test_stream_preserves_reasoning_content(minimax_provider):
         new_callable=AsyncMock,
         return_value=stream,
     ) as create:
-        events = [event async for event in minimax_provider.stream_response(request)]
+        events = [
+            event
+            async for event in minimax_provider.stream_response(
+                request, reasoning=REASONING_ON
+            )
+        ]
 
     parsed = parse_sse_text("".join(events))
     assert thinking_content(parsed) == "plan"

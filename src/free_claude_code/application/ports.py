@@ -8,6 +8,7 @@ from free_claude_code.config.settings import Settings
 from free_claude_code.core.anthropic import MessagesRequest
 
 from .model_metadata import ProviderModelInfo
+from .reasoning import ReasoningPolicy
 
 
 class ProviderPort(Protocol):
@@ -17,7 +18,7 @@ class ProviderPort(Protocol):
         self,
         request: MessagesRequest,
         *,
-        thinking_enabled: bool,
+        reasoning: ReasoningPolicy,
     ) -> None: ...
 
     def stream_response(
@@ -26,7 +27,7 @@ class ProviderPort(Protocol):
         *,
         input_tokens: int,
         request_id: str,
-        thinking_enabled: bool,
+        reasoning: ReasoningPolicy,
     ) -> AsyncIterator[str]: ...
 
 

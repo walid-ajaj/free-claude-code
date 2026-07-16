@@ -4,19 +4,24 @@ from collections.abc import AsyncIterator
 
 import pytest
 
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.core.anthropic.models import Message, MessagesRequest
 from free_claude_code.providers.base import BaseProvider, ProviderConfig
 from free_claude_code.providers.openai_chat import OpenAIChatProvider
+from tests.providers.support import REASONING_OFF
 
 
 class RecordingOpenAIProvider(OpenAIChatProvider):
     def __init__(self) -> None:
-        self.build_calls: list[tuple[MessagesRequest, bool | None]] = []
+        self.build_calls: list[tuple[MessagesRequest, ReasoningPolicy]] = []
 
     def _build_request_body(
-        self, request: MessagesRequest, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> dict:
-        self.build_calls.append((request, thinking_enabled))
+        self.build_calls.append((request, reasoning))
         return {}
 
 
@@ -33,7 +38,7 @@ class ProviderWithoutPreflight(BaseProvider):
         input_tokens: int = 0,
         *,
         request_id: str | None = None,
-        thinking_enabled: bool | None = None,
+        reasoning: ReasoningPolicy,
     ) -> AsyncIterator[str]:
         if False:
             yield ""
@@ -57,6 +62,6 @@ def test_provider_preflight_calls_builder_and_preserves_false() -> None:
         messages=[Message(role="user", content="hello")],
     )
 
-    provider.preflight_stream(request, thinking_enabled=False)
+    provider.preflight_stream(request, reasoning=REASONING_OFF)
 
-    assert provider.build_calls == [(request, False)]
+    assert provider.build_calls == [(request, REASONING_OFF)]

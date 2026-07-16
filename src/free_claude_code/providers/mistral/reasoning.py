@@ -8,9 +8,17 @@ from typing import Any
 
 import openai
 
+from free_claude_code.application.reasoning import ReasoningEffort, ReasoningPolicy
 from free_claude_code.providers.http import maybe_await_aclose
+from free_claude_code.providers.reasoning import reasoning_effort
 
-MISTRAL_REASONING_EFFORT = "high"
+_MISTRAL_EFFORTS = (
+    ReasoningEffort.MINIMAL,
+    ReasoningEffort.LOW,
+    ReasoningEffort.MEDIUM,
+    ReasoningEffort.HIGH,
+    ReasoningEffort.XHIGH,
+)
 
 _REASONING_FIELD_NAMES = frozenset(
     {
@@ -23,13 +31,10 @@ _REJECTION_WORDS = ("unsupported", "unknown", "invalid", "forbidden", "extra")
 
 
 def apply_mistral_reasoning_request_shape(
-    body: dict[str, Any], *, thinking_enabled: bool
+    body: dict[str, Any], *, reasoning: ReasoningPolicy
 ) -> None:
     """Apply Mistral's native reasoning request shape in-place."""
-    if thinking_enabled:
-        body["reasoning_effort"] = MISTRAL_REASONING_EFFORT
-    else:
-        body.pop("reasoning_effort", None)
+    body["reasoning_effort"] = _mistral_reasoning_effort(reasoning)
 
     messages = body.get("messages")
     if not isinstance(messages, list):
@@ -38,12 +43,12 @@ def apply_mistral_reasoning_request_shape(
     for message in messages:
         if not isinstance(message, dict) or message.get("role") != "assistant":
             continue
-        reasoning = _clean_text(message.pop("reasoning_content", None))
-        if thinking_enabled and reasoning:
+        reasoning_text = _clean_text(message.pop("reasoning_content", None))
+        if reasoning.enabled and reasoning_text:
             message["content"] = _content_with_prepended_thinking(
-                message.get("content"), reasoning
+                message.get("content"), reasoning_text
             )
-        elif not thinking_enabled:
+        elif not reasoning.enabled:
             message["content"] = _content_without_thinking(message.get("content"))
 
 
@@ -70,6 +75,18 @@ def clone_body_without_mistral_reasoning(
     if not removed:
         return None
     return cloned
+
+
+def _mistral_reasoning_effort(reasoning: ReasoningPolicy) -> str:
+    if not reasoning.enabled:
+        return "none"
+    effort = reasoning_effort(
+        reasoning,
+        _MISTRAL_EFFORTS,
+        default=ReasoningEffort.HIGH,
+    )
+    assert effort is not None
+    return effort.value
 
 
 def is_mistral_reasoning_rejection(error: Exception) -> bool:

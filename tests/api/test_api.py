@@ -155,7 +155,7 @@ def test_auto_mode_classifier_without_stream_returns_json(client: TestClient):
     assert body["usage"] == {"input_tokens": 0, "output_tokens": 0}
     routed_request = _stream_response_calls[0][0][0]
     assert routed_request.stream is False
-    assert _stream_response_calls[0][1]["thinking_enabled"] is False
+    assert _stream_response_calls[0][1]["reasoning"].enabled is False
 
 
 def test_create_message_ingress_error_has_request_id_without_terminal_header(
@@ -277,7 +277,7 @@ def test_model_mapping(client: TestClient):
     args = _stream_response_calls[0][0]
     kwargs = _stream_response_calls[0][1]
     assert args[0].model != "claude-3-haiku-20240307"
-    assert kwargs["thinking_enabled"] is True
+    assert kwargs["reasoning"].enabled is True
 
 
 @pytest.mark.parametrize(

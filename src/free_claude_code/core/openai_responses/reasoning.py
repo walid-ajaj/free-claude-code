@@ -32,14 +32,19 @@ def combine_reasoning(existing: str | None, addition: str | None) -> str | None:
     return f"{existing}\n{addition}"
 
 
-def responses_reasoning_to_thinking(value: Any) -> dict[str, Any] | None:
+def responses_reasoning_to_anthropic_fields(value: Any) -> dict[str, Any]:
+    """Preserve Responses reasoning enablement and effort for application routing."""
     if not isinstance(value, Mapping):
-        return None
-    if value.get("effort") == "none":
-        return {"type": "disabled", "enabled": False}
+        return {}
+    effort = value.get("effort")
+    if effort == "none":
+        return {"thinking": {"type": "disabled", "enabled": False}}
+    fields: dict[str, Any] = {}
     if any(item is not None for item in value.values()):
-        return {"type": "enabled", "enabled": True}
-    return None
+        fields["thinking"] = {"type": "adaptive", "enabled": True}
+    if isinstance(effort, str) and effort.strip():
+        fields["output_config"] = {"effort": effort}
+    return fields
 
 
 def _text_parts_from_items(value: Any, *, item_type: str) -> list[str]:

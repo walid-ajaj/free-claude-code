@@ -271,7 +271,7 @@ def _provider_smoke_thinking_enabled(smoke_config: SmokeConfig) -> bool:
     return (
         ModelRouter(smoke_config.settings)
         .resolve("claude-sonnet-4-5-20250929")
-        .thinking_enabled
+        .reasoning_allowed
     )
 
 

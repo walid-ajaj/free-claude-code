@@ -8,6 +8,7 @@ import httpx
 import pytest
 
 from free_claude_code.application.errors import ApplicationUnavailableError
+from free_claude_code.application.reasoning import ReasoningEffort, ReasoningPolicy
 from free_claude_code.config.provider_catalog import CLOUDFLARE_AI_REST_ROOT
 from free_claude_code.core.anthropic.models import Message, MessagesRequest
 from free_claude_code.core.anthropic.stream_contracts import parse_sse_text
@@ -16,7 +17,11 @@ from free_claude_code.providers.cloudflare import (
     CloudflareProvider,
     cloudflare_ai_base_url,
 )
-from tests.providers.support import passthrough_rate_limiter
+from tests.providers.support import (
+    REASONING_OFF,
+    REASONING_ON,
+    passthrough_rate_limiter,
+)
 
 _ACCOUNT_ID = "account-123"
 _BASE_URL = f"{CLOUDFLARE_AI_REST_ROOT}/accounts/{_ACCOUNT_ID}/ai/v1"
@@ -30,7 +35,6 @@ def cloudflare_config() -> ProviderConfig:
         base_url=CLOUDFLARE_AI_REST_ROOT,
         rate_limit=10,
         rate_window=60,
-        enable_thinking=True,
     )
 
 
@@ -122,7 +126,7 @@ def test_build_request_body_preserves_literal_cf_model_id_and_controls_thinking(
         }
     )
 
-    body = cloudflare_provider._build_request_body(request, thinking_enabled=True)
+    body = cloudflare_provider._build_request_body(request, reasoning=REASONING_ON)
 
     assert body["model"] == "@cf/moonshotai/kimi-k2.6"
     assert body["max_completion_tokens"] == 100
@@ -141,12 +145,36 @@ def test_build_request_body_disabled_thinking_sets_cloudflare_template_flag(
         }
     )
 
-    body = cloudflare_provider._build_request_body(request, thinking_enabled=True)
+    body = cloudflare_provider._build_request_body(request, reasoning=REASONING_OFF)
 
     assert body["extra_body"]["chat_template_kwargs"]["thinking"] is False
 
 
-def test_build_request_body_preserves_user_extra_body_without_overriding_thinking(
+def test_build_request_body_sends_explicit_cloudflare_effort(
+    cloudflare_provider: CloudflareProvider,
+) -> None:
+    body = cloudflare_provider._build_request_body(
+        _request(),
+        reasoning=ReasoningPolicy.on(effort=ReasoningEffort.LOW),
+    )
+
+    assert body["reasoning_effort"] == "low"
+    assert body["extra_body"]["chat_template_kwargs"]["thinking"] is True
+
+
+def test_build_request_body_does_not_invent_cloudflare_budget_mapping(
+    cloudflare_provider: CloudflareProvider,
+) -> None:
+    body = cloudflare_provider._build_request_body(
+        _request(),
+        reasoning=ReasoningPolicy.on(budget_tokens=2048),
+    )
+
+    assert "reasoning_effort" not in body
+    assert body["extra_body"]["chat_template_kwargs"]["thinking"] is True
+
+
+def test_build_request_body_canonical_policy_overrides_user_thinking_extra(
     cloudflare_provider: CloudflareProvider,
 ) -> None:
     request = MessagesRequest.model_validate(
@@ -157,9 +185,9 @@ def test_build_request_body_preserves_user_extra_body_without_overriding_thinkin
         }
     )
 
-    body = cloudflare_provider._build_request_body(request, thinking_enabled=True)
+    body = cloudflare_provider._build_request_body(request, reasoning=REASONING_ON)
 
-    assert body["extra_body"]["chat_template_kwargs"]["thinking"] is False
+    assert body["extra_body"]["chat_template_kwargs"]["thinking"] is True
 
 
 @pytest.mark.asyncio
@@ -215,7 +243,10 @@ async def test_stream_uses_openai_chat_completions(
         return_value=_stream(_chunk(delta)),
     ) as mock_create:
         events = [
-            event async for event in cloudflare_provider.stream_response(_request())
+            event
+            async for event in cloudflare_provider.stream_response(
+                _request(), reasoning=REASONING_ON
+            )
         ]
 
     parsed = parse_sse_text("".join(events))
@@ -246,7 +277,10 @@ async def test_stream_maps_cloudflare_reasoning_delta_to_thinking(
         return_value=_stream(_chunk(delta)),
     ):
         events = [
-            event async for event in cloudflare_provider.stream_response(_request())
+            event
+            async for event in cloudflare_provider.stream_response(
+                _request(), reasoning=REASONING_ON
+            )
         ]
 
     parsed = parse_sse_text("".join(events))
@@ -296,7 +330,12 @@ async def test_stream_maps_openai_tool_calls_to_tool_use(
         new_callable=AsyncMock,
         return_value=_stream(_chunk(delta, finish_reason="tool_calls")),
     ):
-        events = [event async for event in cloudflare_provider.stream_response(request)]
+        events = [
+            event
+            async for event in cloudflare_provider.stream_response(
+                request, reasoning=REASONING_ON
+            )
+        ]
 
     parsed = parse_sse_text("".join(events))
     assert any(

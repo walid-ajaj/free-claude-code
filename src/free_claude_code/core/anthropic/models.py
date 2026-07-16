@@ -108,7 +108,7 @@ class Tool(_AnthropicBlockBase):
 class ThinkingConfig(BaseModel):
     enabled: bool | None = True
     type: str | None = None
-    budget_tokens: int | None = None
+    budget_tokens: int | None = Field(default=None, strict=True, gt=0)
 
 
 class MessagesRequest(BaseModel):

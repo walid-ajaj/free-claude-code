@@ -14,7 +14,7 @@ from free_claude_code.providers.base import ProviderConfig
 from free_claude_code.providers.http import close_provider_stream
 from free_claude_code.providers.nvidia_nim import NvidiaNimProvider
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter
+from tests.providers.support import REASONING_ON, passthrough_rate_limiter
 
 
 class _FailingStream:
@@ -94,6 +94,7 @@ async def test_committed_provider_failure_closes_block_then_raises_canonical_val
         async for event in provider.stream_response(
             request,
             request_id="req_committed_failure",
+            reasoning=REASONING_ON,
         ):
             emitted.append(event)
 
@@ -136,6 +137,7 @@ async def test_openai_stream_close_failure_cannot_mask_execution_failure() -> No
             async for event in provider.stream_response(
                 request,
                 request_id="req_close_failure",
+                reasoning=REASONING_ON,
             )
         ]
 
@@ -214,6 +216,7 @@ async def test_completed_stream_close_failure_preserves_success_lifecycle() -> N
             async for event in provider.stream_response(
                 request,
                 request_id="req_successful_close_failure",
+                reasoning=REASONING_ON,
             )
         ]
 
@@ -256,7 +259,9 @@ async def test_closing_public_openai_stream_closes_raw_stream_once() -> None:
         new_callable=AsyncMock,
         return_value=raw_stream,
     ):
-        stream = provider.stream_response(request, request_id="req_early_close")
+        stream = provider.stream_response(
+            request, request_id="req_early_close", reasoning=REASONING_ON
+        )
         await anext(stream)
         assert isinstance(stream, AsyncCloseable)
         await stream.aclose()

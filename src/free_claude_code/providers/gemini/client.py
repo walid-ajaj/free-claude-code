@@ -3,6 +3,7 @@
 from copy import deepcopy
 from typing import Any
 
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.core.anthropic.models import MessagesRequest
 from free_claude_code.providers.base import ProviderConfig
 from free_claude_code.providers.openai_chat import (
@@ -45,17 +46,20 @@ class GeminiProvider(OpenAIChatProvider):
         self._tool_call_extra_content_by_id[tool_call_id] = deepcopy(extra_content)
 
     def _build_request_body(
-        self, request: MessagesRequest, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> dict:
         return build_openai_chat_request_body(
             request,
-            thinking_enabled=self._is_thinking_enabled(request, thinking_enabled),
+            reasoning=reasoning,
             policy=_REQUEST_POLICY,
             postprocessors=(
-                lambda body, request_data, enabled: apply_gemini_request_quirks(
+                lambda body, request_data, policy: apply_gemini_request_quirks(
                     body,
                     request_data,
-                    enabled,
+                    policy,
                     tool_call_extra_content_by_id=self._tool_call_extra_content_by_id,
                 ),
             ),

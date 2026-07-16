@@ -15,7 +15,12 @@ from free_claude_code.core.anthropic.stream_contracts import (
 from free_claude_code.providers.base import ProviderConfig
 from free_claude_code.providers.openai_chat import OpenAIChatProvider
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter, profiled_provider
+from tests.providers.support import (
+    REASONING_OFF,
+    REASONING_ON,
+    passthrough_rate_limiter,
+    profiled_provider,
+)
 
 OLLAMA_MODEL = "llama3.1:8b"
 OLLAMA_CLOUD_MODEL = "qwen3-coder:480b"
@@ -74,18 +79,20 @@ def test_cloud_init_uses_fixed_openai_endpoint_and_api_key() -> None:
 
 
 def test_build_request_body_uses_openai_chat_shape() -> None:
-    body = _provider()._build_request_body(make_messages_request(OLLAMA_MODEL))
+    body = _provider()._build_request_body(
+        make_messages_request(OLLAMA_MODEL), reasoning=REASONING_ON
+    )
 
     assert body["model"] == OLLAMA_MODEL
     assert body["messages"][0]["role"] == "system"
-    assert "reasoning_effort" not in body
+    assert body["reasoning_effort"] == "high"
     assert "thinking" not in body
     assert "extra_body" not in body
 
 
 def test_cloud_build_request_body_enables_ollama_reasoning() -> None:
     body = _cloud_provider()._build_request_body(
-        make_messages_request(OLLAMA_CLOUD_MODEL)
+        make_messages_request(OLLAMA_CLOUD_MODEL), reasoning=REASONING_ON
     )
 
     assert body["model"] == OLLAMA_CLOUD_MODEL
@@ -121,7 +128,7 @@ def test_cloud_build_request_body_replays_thinking_in_ollama_reasoning_field() -
         ],
     )
 
-    body = _cloud_provider()._build_request_body(request)
+    body = _cloud_provider()._build_request_body(request, reasoning=REASONING_ON)
 
     assistant = next(
         message for message in body["messages"] if message["role"] == "assistant"
@@ -132,7 +139,7 @@ def test_cloud_build_request_body_replays_thinking_in_ollama_reasoning_field() -
 
 @pytest.mark.parametrize(
     ("provider", "expected_effort"),
-    [(_provider, None), (_cloud_provider, "none")],
+    [(_provider, "none"), (_cloud_provider, "none")],
 )
 def test_disabled_thinking_is_not_replayed_and_disables_ollama_reasoning(
     provider, expected_effort
@@ -151,15 +158,12 @@ def test_disabled_thinking_is_not_replayed_and_disables_ollama_reasoning(
         ],
     )
 
-    body = provider()._build_request_body(request, thinking_enabled=False)
+    body = provider()._build_request_body(request, reasoning=REASONING_OFF)
     assistant = next(
         message for message in body["messages"] if message["role"] == "assistant"
     )
 
-    if expected_effort is None:
-        assert "reasoning_effort" not in body
-    else:
-        assert body["reasoning_effort"] == expected_effort
+    assert body["reasoning_effort"] == expected_effort
     assert "reasoning" not in assistant
     assert "reasoning_content" not in assistant
     assert assistant["content"] == "Visible answer."
@@ -194,7 +198,7 @@ async def test_stream_response_uses_shared_openai_chat_provider() -> None:
             [
                 event
                 async for event in provider.stream_response(
-                    make_messages_request(OLLAMA_MODEL)
+                    make_messages_request(OLLAMA_MODEL), reasoning=REASONING_ON
                 )
             ]
         )
@@ -234,7 +238,7 @@ async def test_cloud_stream_maps_ollama_reasoning_delta_to_anthropic_thinking() 
             [
                 event
                 async for event in client.stream_response(
-                    make_messages_request(OLLAMA_CLOUD_MODEL)
+                    make_messages_request(OLLAMA_CLOUD_MODEL), reasoning=REASONING_ON
                 )
             ]
         )

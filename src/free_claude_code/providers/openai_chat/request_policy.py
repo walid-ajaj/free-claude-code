@@ -8,12 +8,15 @@ from typing import Any, Literal
 from loguru import logger
 
 from free_claude_code.application.errors import InvalidRequestError
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.core.anthropic import ReasoningReplayMode, build_base_request_body
 from free_claude_code.core.anthropic.conversion import OpenAIConversionError
 from free_claude_code.core.anthropic.models import MessagesRequest
 
 MaxTokensField = Literal["max_tokens", "max_completion_tokens"]
-OpenAIChatPostprocessor = Callable[[dict[str, Any], MessagesRequest, bool], None]
+OpenAIChatPostprocessor = Callable[
+    [dict[str, Any], MessagesRequest, ReasoningPolicy], None
+]
 ExtraBodyValidator = Callable[[dict[str, Any]], None]
 
 
@@ -36,7 +39,7 @@ class OpenAIChatRequestPolicy:
 def build_openai_chat_request_body(
     request_data: MessagesRequest,
     *,
-    thinking_enabled: bool,
+    reasoning: ReasoningPolicy,
     reasoning_history_enabled: bool | None = None,
     policy: OpenAIChatRequestPolicy,
     postprocessors: Iterable[OpenAIChatPostprocessor] = (),
@@ -50,7 +53,7 @@ def build_openai_chat_request_body(
     )
     try:
         if reasoning_history_enabled is None:
-            reasoning_history_enabled = thinking_enabled
+            reasoning_history_enabled = reasoning.enabled
         if not reasoning_history_enabled:
             reasoning_replay = ReasoningReplayMode.DISABLED
         else:
@@ -81,7 +84,7 @@ def build_openai_chat_request_body(
     _apply_common_openai_chat_policy(body, policy)
 
     for postprocess in postprocessors:
-        postprocess(body, request_data, thinking_enabled)
+        postprocess(body, request_data, reasoning)
 
     logger.debug(
         "{}_REQUEST: conversion done model={} msgs={} tools={}",

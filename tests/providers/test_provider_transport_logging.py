@@ -13,7 +13,7 @@ from free_claude_code.core.failures import ExecutionFailure
 from free_claude_code.providers.base import ProviderConfig
 from free_claude_code.providers.nvidia_nim import NvidiaNimProvider
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter
+from tests.providers.support import REASONING_ON, passthrough_rate_limiter
 
 
 def _provider(*, verbose: bool = False) -> NvidiaNimProvider:
@@ -47,7 +47,12 @@ async def test_stream_failure_default_logs_exclude_exception_text(caplog) -> Non
         caplog.at_level(logging.ERROR),
         pytest.raises(ExecutionFailure),
     ):
-        [event async for event in provider.stream_response(make_messages_request())]
+        [
+            event
+            async for event in provider.stream_response(
+                make_messages_request(), reasoning=REASONING_ON
+            )
+        ]
 
     messages = " | ".join(record.getMessage() for record in caplog.records)
     assert "SECRET_OPENAI_COMPAT" not in messages
@@ -72,7 +77,12 @@ async def test_stream_failure_default_logs_cause_types_only(caplog) -> None:
         caplog.at_level(logging.ERROR),
         pytest.raises(ExecutionFailure),
     ):
-        [event async for event in provider.stream_response(make_messages_request())]
+        [
+            event
+            async for event in provider.stream_response(
+                make_messages_request(), reasoning=REASONING_ON
+            )
+        ]
 
     messages = " | ".join(record.getMessage() for record in caplog.records)
     assert "SECRET_CAUSE_DETAIL" not in messages
@@ -96,7 +106,12 @@ async def test_stream_failure_verbose_traceback_redacts_credentials(caplog) -> N
         caplog.at_level(logging.ERROR),
         pytest.raises(ExecutionFailure),
     ):
-        [event async for event in provider.stream_response(make_messages_request())]
+        [
+            event
+            async for event in provider.stream_response(
+                make_messages_request(), reasoning=REASONING_ON
+            )
+        ]
 
     messages = " | ".join(record.getMessage() for record in caplog.records)
     assert "api_key=<redacted>" in messages

@@ -2,6 +2,7 @@
 
 from typing import Any
 
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.core.anthropic.models import MessagesRequest
 from free_claude_code.providers.base import ProviderConfig
 from free_claude_code.providers.openai_chat import (
@@ -28,11 +29,14 @@ class DeepSeekProvider(OpenAIChatProvider):
         )
 
     def _build_request_body(
-        self, request: MessagesRequest, thinking_enabled: bool | None = None
+        self,
+        request: MessagesRequest,
+        *,
+        reasoning: ReasoningPolicy,
     ) -> dict:
         return build_deepseek_request_body(
             request,
-            thinking_enabled=self._is_thinking_enabled(request, thinking_enabled),
+            reasoning=reasoning,
         )
 
     def _anthropic_usage_fields(self, usage_info: Any) -> dict[str, int]:

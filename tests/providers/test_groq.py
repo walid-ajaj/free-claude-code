@@ -7,7 +7,11 @@ import pytest
 from free_claude_code.config.provider_catalog import GROQ_DEFAULT_BASE
 from free_claude_code.providers.base import ProviderConfig
 from tests.providers.request_factory import make_messages_request
-from tests.providers.support import passthrough_rate_limiter, profiled_provider
+from tests.providers.support import (
+    REASONING_ON,
+    passthrough_rate_limiter,
+    profiled_provider,
+)
 
 
 def make_request(**overrides):
@@ -21,7 +25,6 @@ def groq_config():
         base_url=GROQ_DEFAULT_BASE,
         rate_limit=10,
         rate_window=60,
-        enable_thinking=True,
     )
 
 
@@ -52,7 +55,7 @@ def test_default_base_url_constant():
 def test_build_request_body_basic(groq_provider):
     """Basic request body conversion attaches system message from Claude request."""
     req = make_request()
-    body = groq_provider._build_request_body(req)
+    body = groq_provider._build_request_body(req, reasoning=REASONING_ON)
 
     assert body["model"] == "llama-3.3-70b-versatile"
     assert body["messages"][0]["role"] == "system"
@@ -67,12 +70,11 @@ def test_build_request_body_global_disable_blocks_reasoning_mapping():
             base_url=GROQ_DEFAULT_BASE,
             rate_limit=10,
             rate_window=60,
-            enable_thinking=False,
         ),
         rate_limiter=passthrough_rate_limiter(),
     )
     req = make_request()
-    body = provider._build_request_body(req)
+    body = provider._build_request_body(req, reasoning=REASONING_ON)
 
     roles = [m.get("role") for m in body.get("messages", [])]
     assert "assistant_reasoning_content" not in roles
@@ -100,7 +102,7 @@ def test_build_request_body_sanitizes_and_remaps_via_mock_converter(groq_provide
             "n": 4,
         }
         req = make_request()
-        body = groq_provider._build_request_body(req)
+        body = groq_provider._build_request_body(req, reasoning=REASONING_ON)
 
     msgs = body["messages"]
     assert msgs[0].get("name") is None and msgs[1].get("name") is None
@@ -121,7 +123,7 @@ def test_build_request_body_prefers_existing_max_completion_tokens(groq_provider
             "max_completion_tokens": 77,
             "max_tokens": 999,
         }
-        body = groq_provider._build_request_body(make_request())
+        body = groq_provider._build_request_body(make_request(), reasoning=REASONING_ON)
 
     assert body["max_completion_tokens"] == 77
     assert "max_tokens" not in body
@@ -130,7 +132,7 @@ def test_build_request_body_prefers_existing_max_completion_tokens(groq_provider
 def test_build_request_body_preserves_caller_extra_body(groq_provider):
     req = make_request(extra_body={"metadata": {"user": "u1"}})
 
-    body = groq_provider._build_request_body(req)
+    body = groq_provider._build_request_body(req, reasoning=REASONING_ON)
 
     eb = body.get("extra_body")
     assert isinstance(eb, dict)
@@ -163,7 +165,12 @@ async def test_stream_response_text(groq_provider):
     ) as mock_create:
         mock_create.return_value = mock_stream()
 
-        events = [event async for event in groq_provider.stream_response(req)]
+        events = [
+            event
+            async for event in groq_provider.stream_response(
+                req, reasoning=REASONING_ON
+            )
+        ]
 
         assert any(
             '"text_delta"' in event and "Hello back!" in event for event in events
@@ -196,7 +203,12 @@ async def test_stream_response_reasoning_content(groq_provider):
     ) as mock_create:
         mock_create.return_value = mock_stream()
 
-        events = [event async for event in groq_provider.stream_response(req)]
+        events = [
+            event
+            async for event in groq_provider.stream_response(
+                req, reasoning=REASONING_ON
+            )
+        ]
 
         assert any(
             '"thinking_delta"' in event and "Thinking..." in event for event in events

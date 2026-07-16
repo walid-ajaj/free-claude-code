@@ -199,6 +199,23 @@ def test_messages_request_preserves_native_thinking_budget():
     assert dumped["thinking"]["budget_tokens"] == 4096
 
 
+@pytest.mark.parametrize("budget_tokens", [0, -1, True, "4096"])
+def test_messages_request_rejects_invalid_thinking_budget(
+    budget_tokens: object,
+) -> None:
+    with pytest.raises(ValidationError):
+        MessagesRequest.model_validate(
+            {
+                "model": "claude-3-opus",
+                "messages": [{"role": "user", "content": "think"}],
+                "thinking": {
+                    "type": "enabled",
+                    "budget_tokens": budget_tokens,
+                },
+            }
+        )
+
+
 def test_messages_request_accepts_adaptive_thinking_type():
     request = MessagesRequest.model_validate(
         {

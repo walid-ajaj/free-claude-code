@@ -21,6 +21,7 @@ from free_claude_code.providers.rate_limit import (
     ProviderRateLimiter,
 )
 from tests.providers.request_factory import make_messages_request
+from tests.providers.support import REASONING_ON
 
 _FUNCTION_ID = "87ea0ddc-cff1-4bca-bf8b-3bd98a35ddd0"
 _DEGRADED_DETAIL = f"Function id '{_FUNCTION_ID}': DEGRADED function cannot be invoked"
@@ -111,7 +112,9 @@ async def test_degraded_function_retries_unchanged_request_then_succeeds() -> No
         events = [
             event
             async for event in provider.stream_response(
-                make_messages_request(), request_id="req_recovered"
+                make_messages_request(),
+                request_id="req_recovered",
+                reasoning=REASONING_ON,
             )
         ]
 
@@ -154,7 +157,9 @@ async def test_degraded_function_exhaustion_is_detailed_redacted_overload() -> N
         [
             event
             async for event in provider.stream_response(
-                make_messages_request(), request_id="req_degraded"
+                make_messages_request(),
+                request_id="req_degraded",
+                reasoning=REASONING_ON,
             )
         ]
 
@@ -212,7 +217,12 @@ async def test_unrelated_nim_bad_request_is_not_retried(detail: str) -> None:
         ) as sleep,
         pytest.raises(ExecutionFailure) as exc_info,
     ):
-        [event async for event in provider.stream_response(make_messages_request())]
+        [
+            event
+            async for event in provider.stream_response(
+                make_messages_request(), reasoning=REASONING_ON
+            )
+        ]
 
     assert create.await_count == 1
     extend_block.assert_not_called()
@@ -246,7 +256,12 @@ async def test_degraded_wording_remains_non_retryable_for_other_providers() -> N
         ) as sleep,
         pytest.raises(ExecutionFailure) as exc_info,
     ):
-        [event async for event in provider.stream_response(make_messages_request())]
+        [
+            event
+            async for event in provider.stream_response(
+                make_messages_request(), reasoning=REASONING_ON
+            )
+        ]
 
     assert create.await_count == 1
     extend_block.assert_not_called()

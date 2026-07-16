@@ -36,7 +36,7 @@ def test_model_router_resolves_default_model(settings):
     assert resolved.provider_id == "nvidia_nim"
     assert resolved.provider_model == "fallback-model"
     assert resolved.provider_model_ref == "nvidia_nim/fallback-model"
-    assert resolved.thinking_enabled is True
+    assert resolved.reasoning_allowed is True
 
 
 def test_model_router_applies_opus_override(settings):
@@ -52,7 +52,8 @@ def test_model_router_applies_opus_override(settings):
     assert routed.request.model == "deepseek/deepseek-r1"
     assert routed.resolved.provider_model_ref == "open_router/deepseek/deepseek-r1"
     assert routed.resolved.original_model == "claude-opus-4-20250514"
-    assert routed.resolved.thinking_enabled is True
+    assert routed.resolved.reasoning_allowed is True
+    assert routed.reasoning.enabled is True
     assert request.model == "claude-opus-4-20250514"
 
 
@@ -80,11 +81,11 @@ def test_model_router_resolves_per_model_thinking(settings):
 
     router = ModelRouter(settings)
 
-    assert router.resolve("claude-fable-5").thinking_enabled is True
-    assert router.resolve("claude-opus-4-20250514").thinking_enabled is True
-    assert router.resolve("claude-sonnet-4-20250514").thinking_enabled is False
-    assert router.resolve("claude-3-haiku-20240307").thinking_enabled is False
-    assert router.resolve("claude-2.1").thinking_enabled is False
+    assert router.resolve("claude-fable-5").reasoning_allowed is True
+    assert router.resolve("claude-opus-4-20250514").reasoning_allowed is True
+    assert router.resolve("claude-sonnet-4-20250514").reasoning_allowed is False
+    assert router.resolve("claude-3-haiku-20240307").reasoning_allowed is False
+    assert router.resolve("claude-2.1").reasoning_allowed is False
 
 
 def test_model_router_applies_haiku_override(settings):
@@ -205,7 +206,8 @@ def test_model_router_routes_no_thinking_gateway_model_directly(settings):
     )
     assert routed.resolved.provider_id == "nvidia_nim"
     assert routed.resolved.provider_model == "deepseek-ai/deepseek-v4-pro"
-    assert routed.resolved.thinking_enabled is False
+    assert routed.resolved.reasoning_allowed is False
+    assert routed.reasoning.enabled is False
 
 
 def test_model_router_direct_prefixed_model_uses_provider_model_for_thinking(settings):
@@ -216,7 +218,7 @@ def test_model_router_direct_prefixed_model_uses_provider_model_for_thinking(set
 
     assert resolved.provider_id == "open_router"
     assert resolved.provider_model == "anthropic/claude-opus-4"
-    assert resolved.thinking_enabled is True
+    assert resolved.reasoning_allowed is True
 
 
 def test_model_router_routes_token_count_request(settings):

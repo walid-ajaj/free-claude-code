@@ -434,7 +434,7 @@ sequenceDiagram
     Route->>Manager: acquire current generation
     Manager-->>Route: Lease(settings, provider resolver)
     Route->>Handler: create message
-    Handler->>Router: resolve model and thinking
+    Handler->>Router: resolve model and reasoning policy
     Handler->>Handler: server tools or optimizations
     Handler->>Exec: stream routed request
     Exec->>Lease: resolve provider
@@ -465,10 +465,50 @@ If the incoming model is not direct, `ModelRouter` maps it by Claude tier. Names
 containing `fable`, `opus`, `sonnet`, or `haiku` use the matching tier override when set,
 otherwise they fall back to `MODEL`.
 
-The router also resolves thinking. Gateway model IDs can force thinking on or
-off; otherwise `ModelRouter` applies tier-specific thinking overrides or the
-global setting. `ResolvedModel` carries only the selected route and thinking
-decision; provider catalog metadata does not cross the application boundary.
+The router also resolves whether the selected route permits reasoning. Gateway
+model IDs can force reasoning off; otherwise `ModelRouter` applies the
+tier-specific thinking switches or the global setting. `ResolvedModel` carries
+that route-level allowance as `reasoning_allowed`; it is not the final request
+policy, and provider catalog metadata does not cross the application boundary.
+
+### Reasoning Policy Boundary
+
+[application/reasoning.py](src/free_claude_code/application/reasoning.py) owns the
+provider-neutral reasoning decision. After model routing, it combines the route
+allowance with the incoming protocol intent exactly once and produces an
+immutable `ReasoningPolicy`:
+
+- `enabled` is the final on/off decision;
+- `effort` preserves a recognized qualitative level from `output_config`;
+- `budget_tokens` preserves a positive explicit Anthropic thinking budget.
+
+The Anthropic protocol model rejects booleans, strings, zero, and negative
+values for `thinking.budget_tokens`. A request-level disable or a route that
+does not permit reasoning produces `ReasoningPolicy.off()` with no residual
+effort or budget. When both an explicit budget and an effort are present, the
+explicit budget has precedence.
+
+The routed request owns this resolved value. Application execution passes it
+unchanged through the provider port; `ProviderConfig` does not contain a second
+thinking switch, and providers do not inspect settings or re-resolve request
+intent.
+
+Provider adapters own only wire translation:
+
+- native effort APIs receive the closest documented effort, preferring the
+  higher supported level on an equal-distance tie;
+- native numeric APIs receive the explicit budget, or FCC's stable
+  effort-to-budget ladder when only effort was supplied:
+  `minimal=256`, `low=1024`, `medium=2048`, `high=4096`,
+  `xhigh=8192`, and `max=16384`;
+- binary APIs receive their documented enable/disable field;
+- mandatory-reasoning models omit unsupported disable controls;
+- providers with no documented control receive no invented field.
+
+Caller `extra_body` data cannot replace FCC-owned reasoning fields. Provider
+retries preserve the resolved policy. A provider may retry once without an
+optional reasoning field only when that upstream explicitly rejects the field;
+this is a compatibility downgrade, not a global retry with reasoning disabled.
 
 `GET /v1/models` advertises:
 
@@ -536,7 +576,7 @@ compatibility layer.
 [providers/base.py](src/free_claude_code/providers/base.py) defines provider-internal construction and lifecycle contracts:
 
 - `ProviderConfig`: shared provider settings such as API key, base URL, rate
-  limits, timeouts, proxy, thinking, and logging flags. It is a frozen internal
+  limits, timeouts, proxy, and logging flags. It is a frozen internal
   value whose base URL has already been resolved from the catalog.
 - `BaseProvider`: the abstract implementation base for cleanup, model listing,
   explicit preflight, and `stream_response()`.
@@ -545,9 +585,9 @@ There is one upstream provider family:
 [providers/openai_chat/](src/free_claude_code/providers/openai_chat/) implements the concrete
 `OpenAIChatProvider` used by every OpenAI-compatible `/chat/completions`
 upstream. `OpenAIChatProfile` contains immutable request policy, its standard
-streamed-reasoning field, postprocessors, and base-URL normalization for
-ordinary vendors. Configuration differences therefore remain data rather than
-empty subclasses. The package also
+streamed-reasoning field, provider reasoning encoder, postprocessors, and
+base-URL normalization for ordinary vendors. Configuration differences
+therefore remain data rather than empty subclasses. The package also
 owns the exactly typed private per-request runner, recovery operations, tool-call
 assembly, and streamed usage handling. No obsolete generic transport namespace
 or untyped provider backchannel remains.
@@ -559,7 +599,7 @@ LM Studio composes the OpenAI-chat conversion first and its context-budget probe
 second; conversion failure therefore cannot open a stream or run the probe.
 
 Providers call the OpenAI request policy for Anthropic-to-OpenAI conversion,
-thinking replay selection, `extra_body`, and chat-completion field normalization.
+reasoning replay selection, `extra_body`, and chat-completion field normalization.
 Specialized provider packages remain only for true upstream quirks such as
 Gemini thought signatures, NIM tool-schema aliases, retry downgrades, and NVCF
 deployment-failure classification, or DeepSeek attachment/tool/thinking
@@ -579,8 +619,9 @@ account-scoped Workers AI OpenAI-compatible Chat Completions endpoint for
 `@cf/...` model IDs, while account ID composition, model search, and
 Cloudflare-specific reasoning deltas stay in the Cloudflare provider client.
 OpenRouter remains specialized for model filtering and reasoning-detail stream
-events. Wafer, Kimi, MiniMax, Fireworks, and Z.ai use ordinary declarative
-profiles for their thinking, token, and `extra_body` policy. Z.ai is treated as
+events. Wafer, Kimi, MiniMax, Cerebras, Groq, SambaNova, Fireworks, and Z.ai use
+ordinary declarative profiles for their documented reasoning and `extra_body`
+policy. Z.ai is treated as
 the GLM Coding Plan provider and uses Z.ai's Coding Plan OpenAI base.
 Mistral La Plateforme keeps its native `reasoning_effort` and thinking-chunk
 request/stream mapping inside
@@ -755,10 +796,13 @@ tools with a single string `input` field, and restores `custom_tool_call`,
 Responses edge. Text or grammar format metadata is preserved as model guidance;
 FCC does not validate custom-tool grammars.
 
-Responses reasoning is handled as protocol conversion, not provider policy.
-`reasoning.effort = "none"` converts to a disabled Anthropic `thinking`
+Responses reasoning is handled first as protocol conversion, not provider
+policy. `reasoning.effort = "none"` converts to a disabled Anthropic `thinking`
 request; any other explicit Responses reasoning request enables Anthropic
-thinking without translating OpenAI effort names into Anthropic token budgets.
+thinking and preserves its effort in `output_config`. The application reasoning
+boundary then resolves that intent exactly as it does for native Messages
+requests. Only the selected provider adapter may translate the resolved effort
+into a numeric budget.
 Prior Responses `reasoning` input items replay plaintext `reasoning_text`, or
 fallback `summary_text`, into assistant `reasoning_content`. Encrypted reasoning
 input is ignored because the proxy cannot decrypt it.
@@ -792,11 +836,11 @@ request remains ordered and unchanged for provider execution.
 The Messages handler runs these only after model routing and after local server-tool
 handling. Each optimization is controlled by settings flags.
 
-Claude Code auto-mode safety-classifier requests are a message-only routing
-policy, not a short-circuit response. After routing, the Messages handler detects the
-narrow classifier prompt shape and forces thinking off before provider execution
-so Claude Code receives a parser-readable `<block>yes</block>` or
-`<block>no</block>` verdict.
+Claude Code auto-mode safety-classifier requests are a message-only application
+policy, not a short-circuit response. After routing, the Messages handler detects
+the narrow classifier prompt shape and replaces the routed reasoning policy with
+`ReasoningPolicy.off()` before provider execution so Claude Code receives a
+parser-readable `<block>yes</block>` or `<block>no</block>` verdict.
 
 Local `web_search` and `web_fetch` handling lives under
 [api/web_tools/](src/free_claude_code/api/web_tools/). When `ENABLE_WEB_SERVER_TOOLS` is true, the

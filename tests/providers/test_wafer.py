@@ -1,6 +1,5 @@
 """Tests for the Wafer OpenAI-chat provider."""
 
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -9,28 +8,14 @@ from free_claude_code.config.constants import ANTHROPIC_DEFAULT_MAX_OUTPUT_TOKEN
 from free_claude_code.config.provider_catalog import WAFER_DEFAULT_BASE
 from free_claude_code.core.anthropic.models import Message, MessagesRequest, Tool
 from free_claude_code.providers.base import ProviderConfig
-from free_claude_code.providers.openai_chat import (
-    OPENAI_CHAT_PROFILES,
-    OpenAIChatProvider,
+from free_claude_code.providers.openai_chat import OpenAIChatProvider
+from tests.providers.support import (
+    REASONING_OFF,
+    REASONING_ON,
+    passthrough_rate_limiter,
+    profiled_provider,
+    reasoning_for,
 )
-from free_claude_code.providers.rate_limit import ProviderRateLimiter
-from tests.providers.support import passthrough_rate_limiter, profiled_provider
-
-
-class CountingWaferProvider(OpenAIChatProvider):
-    def __init__(self, config: ProviderConfig, *, rate_limiter: ProviderRateLimiter):
-        super().__init__(
-            config,
-            profile=OPENAI_CHAT_PROFILES["wafer"],
-            rate_limiter=rate_limiter,
-        )
-        self.thinking_checks = 0
-
-    def _is_thinking_enabled(
-        self, request: Any, thinking_enabled: bool | None = None
-    ) -> bool:
-        self.thinking_checks += 1
-        return super()._is_thinking_enabled(request, thinking_enabled)
 
 
 @pytest.fixture
@@ -79,7 +64,10 @@ def test_build_request_body_openai_shape_and_defaults(wafer_provider):
         }
     )
 
-    body = wafer_provider._build_request_body(request)
+    body = wafer_provider._build_request_body(
+        request,
+        reasoning=reasoning_for(request),
+    )
 
     assert body["model"] == "DeepSeek-V4-Pro"
     assert body["messages"][0] == {"role": "user", "content": "Hello"}
@@ -96,7 +84,7 @@ def test_build_request_body_honors_effective_no_thinking(wafer_provider):
         }
     )
 
-    body = wafer_provider._build_request_body(request, thinking_enabled=False)
+    body = wafer_provider._build_request_body(request, reasoning=REASONING_OFF)
 
     assert body["extra_body"]["thinking"] == {"type": "disabled"}
 
@@ -110,27 +98,28 @@ def test_build_request_body_preserves_request_disabled_thinking(wafer_provider):
         }
     )
 
-    body = wafer_provider._build_request_body(request, thinking_enabled=True)
+    body = wafer_provider._build_request_body(
+        request,
+        reasoning=reasoning_for(request),
+    )
 
     assert body["extra_body"]["thinking"] == {"type": "disabled"}
 
 
-def test_build_request_body_resolves_thinking_once(wafer_config):
-    provider = CountingWaferProvider(
-        wafer_config,
-        rate_limiter=passthrough_rate_limiter(),
-    )
+def test_build_request_body_uses_canonical_policy_without_rechecking_request(
+    wafer_provider,
+):
     request = MessagesRequest.model_validate(
         {
             "model": "DeepSeek-V4-Pro",
             "messages": [{"role": "user", "content": "Explore the codebase."}],
+            "thinking": {"type": "disabled"},
         }
     )
 
-    body = provider._build_request_body(request, thinking_enabled=False)
+    body = wafer_provider._build_request_body(request, reasoning=REASONING_ON)
 
-    assert body["extra_body"]["thinking"] == {"type": "disabled"}
-    assert provider.thinking_checks == 1
+    assert body["extra_body"]["thinking"] == {"type": "enabled"}
 
 
 @pytest.mark.asyncio

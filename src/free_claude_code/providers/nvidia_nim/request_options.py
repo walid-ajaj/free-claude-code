@@ -1,7 +1,9 @@
 """NVIDIA NIM request option injection."""
 
+from copy import deepcopy
 from typing import Any
 
+from free_claude_code.application.reasoning import ReasoningPolicy
 from free_claude_code.config.nim import NimSettings
 from free_claude_code.core.anthropic import set_if_not_none
 from free_claude_code.core.anthropic.models import MessagesRequest
@@ -9,6 +11,7 @@ from free_claude_code.providers.openai_chat import (
     OpenAIChatRequestPolicy,
     build_openai_chat_request_body,
 )
+from free_claude_code.providers.reasoning import reasoning_budget_tokens
 
 from .tool_schema import sanitize_nim_tool_schemas
 
@@ -16,18 +19,21 @@ _REQUEST_POLICY = OpenAIChatRequestPolicy(provider_name="NIM")
 
 
 def build_nim_request_body(
-    request_data: MessagesRequest, nim: NimSettings, *, thinking_enabled: bool
+    request_data: MessagesRequest,
+    nim: NimSettings,
+    *,
+    reasoning: ReasoningPolicy,
 ) -> dict[str, Any]:
     """Build OpenAI-format request body from Anthropic request plus NIM settings."""
     return build_openai_chat_request_body(
         request_data,
-        thinking_enabled=thinking_enabled,
+        reasoning=reasoning,
         policy=_REQUEST_POLICY,
         postprocessors=(
-            lambda body, request, enabled: apply_nim_request_options(
+            lambda body, request, policy: apply_nim_request_options(
                 body,
                 request,
-                enabled,
+                policy,
                 nim=nim,
             ),
         ),
@@ -37,7 +43,7 @@ def build_nim_request_body(
 def apply_nim_request_options(
     body: dict[str, Any],
     request_data: MessagesRequest,
-    thinking_enabled: bool,
+    reasoning: ReasoningPolicy,
     *,
     nim: NimSettings,
 ) -> None:
@@ -71,14 +77,9 @@ def apply_nim_request_options(
     extra_body: dict[str, Any] = {}
     request_extra = request_data.extra_body
     if request_extra:
-        extra_body.update(request_extra)
+        extra_body.update(deepcopy(request_extra))
 
-    if thinking_enabled:
-        chat_template_kwargs = extra_body.setdefault(
-            "chat_template_kwargs", {"thinking": True, "enable_thinking": True}
-        )
-        if isinstance(chat_template_kwargs, dict):
-            chat_template_kwargs.setdefault("reasoning_budget", max_tokens)
+    _apply_nim_reasoning(extra_body, request_data.model, reasoning)
 
     req_top_k = request_data.top_k
     top_k = req_top_k if req_top_k is not None else nim.top_k
@@ -94,6 +95,38 @@ def apply_nim_request_options(
 
     if extra_body:
         body["extra_body"] = extra_body
+
+
+def _apply_nim_reasoning(
+    extra_body: dict[str, Any],
+    model: str,
+    reasoning: ReasoningPolicy,
+) -> None:
+    """Encode NIM's toggle plus optional model-specific numeric budget."""
+    chat_template_kwargs = extra_body.setdefault("chat_template_kwargs", {})
+    if not isinstance(chat_template_kwargs, dict):
+        return
+
+    chat_template_kwargs["thinking"] = reasoning.enabled
+    chat_template_kwargs["enable_thinking"] = reasoning.enabled
+    chat_template_kwargs.pop("reasoning_budget", None)
+    chat_template_kwargs.pop("low_effort", None)
+
+    nvext = extra_body.get("nvext")
+    if isinstance(nvext, dict):
+        nvext.pop("max_thinking_tokens", None)
+        if not nvext:
+            extra_body.pop("nvext", None)
+
+    budget = reasoning_budget_tokens(reasoning)
+    if budget is None:
+        return
+    if "nvidia-nemotron-nano-9b-v2" in model.lower():
+        nvext = extra_body.setdefault("nvext", {})
+        if isinstance(nvext, dict):
+            nvext["max_thinking_tokens"] = budget
+        return
+    chat_template_kwargs["reasoning_budget"] = budget
 
 
 def _set_extra(

@@ -409,7 +409,7 @@ class TestSettings:
         settings = Settings()
         assert settings.enable_opus_thinking is None
         assert (
-            ModelRouter(settings).resolve("claude-opus-4-20250514").thinking_enabled
+            ModelRouter(settings).resolve("claude-opus-4-20250514").reasoning_allowed
             is False
         )
 
@@ -424,11 +424,11 @@ class TestSettings:
         monkeypatch.setenv("ENABLE_HAIKU_THINKING", "false")
         settings = Settings()
         router = ModelRouter(settings)
-        assert router.resolve("claude-fable-5").thinking_enabled is True
-        assert router.resolve("claude-opus-4-20250514").thinking_enabled is True
-        assert router.resolve("claude-sonnet-4-20250514").thinking_enabled is False
-        assert router.resolve("claude-haiku-4-20250514").thinking_enabled is False
-        assert router.resolve("unknown-model").thinking_enabled is False
+        assert router.resolve("claude-fable-5").reasoning_allowed is True
+        assert router.resolve("claude-opus-4-20250514").reasoning_allowed is True
+        assert router.resolve("claude-sonnet-4-20250514").reasoning_allowed is False
+        assert router.resolve("claude-haiku-4-20250514").reasoning_allowed is False
+        assert router.resolve("unknown-model").reasoning_allowed is False
 
     def test_anthropic_auth_token_from_env_without_dotenv_key(self, monkeypatch):
         """ANTHROPIC_AUTH_TOKEN env var is loaded when dotenv does not define it."""

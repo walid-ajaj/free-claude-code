@@ -3,6 +3,9 @@ param(
     [switch] $VoiceLocal,
     [switch] $VoiceAll,
     [string] $TorchBackend = "",
+    [switch] $OnlyClaudeCode,
+    [switch] $OnlyCodex,
+    [switch] $OnlyPi,
     [switch] $DryRun,
     [switch] $Help,
     [Parameter(ValueFromRemainingArguments = $true)]
@@ -32,6 +35,9 @@ Options:
   -VoiceLocal            Install local Whisper voice transcription support.
   -VoiceAll              Install all voice transcription backends.
   -TorchBackend VALUE    Use a uv PyTorch backend, such as cu130. Requires local voice.
+  -OnlyClaudeCode        Only check/install Claude Code, skipping Codex and Pi.
+  -OnlyCodex             Only check/install Codex, skipping Claude Code and Pi.
+  -OnlyPi                Only check/install Pi, skipping Claude Code and Codex.
   -DryRun                Print commands without running them.
   -Help                  Show this help text.
 "@
@@ -525,16 +531,27 @@ if ((-not [string]::IsNullOrWhiteSpace($TorchBackend)) -and (-not ($VoiceLocal -
     throw "-TorchBackend requires -VoiceLocal or -VoiceAll."
 }
 
+$onlyAgentsRequested = $OnlyClaudeCode -or $OnlyCodex -or $OnlyPi
+$installClaudeCode = -not $onlyAgentsRequested -or $OnlyClaudeCode
+$installCodex = -not $onlyAgentsRequested -or $OnlyCodex
+$installPi = -not $onlyAgentsRequested -or $OnlyPi
+
 Add-KnownBinDirectories
 
-Write-Step "Ensuring Claude Code is installed"
-Ensure-ClaudeCode
+if ($installClaudeCode) {
+    Write-Step "Ensuring Claude Code is installed"
+    Ensure-ClaudeCode
+}
 
-Write-Step "Ensuring Codex is installed"
-Ensure-Codex
+if ($installCodex) {
+    Write-Step "Ensuring Codex is installed"
+    Ensure-Codex
+}
 
-Write-Step "Ensuring Pi is installed"
-Ensure-Pi
+if ($installPi) {
+    Write-Step "Ensuring Pi is installed"
+    Ensure-Pi
+}
 
 Write-Step "Ensuring uv $MinUvVersion or newer is installed"
 Ensure-Uv

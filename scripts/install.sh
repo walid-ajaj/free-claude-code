@@ -14,6 +14,9 @@ voice_nim=0
 voice_local=0
 voice_all=0
 torch_backend=""
+only_claude_code=0
+only_codex=0
+only_pi=0
 temporary_script=""
 
 show_usage() {
@@ -27,6 +30,9 @@ Options:
   --voice-local            Install local Whisper voice transcription support.
   --voice-all              Install all voice transcription backends.
   --torch-backend VALUE    Use a uv PyTorch backend, such as cu130. Requires local voice.
+  --only-claude-code       Only check/install Claude Code, skipping Codex and Pi.
+  --only-codex             Only check/install Codex, skipping Claude Code and Pi.
+  --only-pi                Only check/install Pi, skipping Claude Code and Codex.
   --dry-run                Print commands without running them.
   --help                   Show this help text.
 USAGE
@@ -374,6 +380,15 @@ parse_args() {
                 torch_backend=${1#*=}
                 [ -n "$torch_backend" ] || fail "--torch-backend requires a non-empty value."
                 ;;
+            --only-claude-code)
+                only_claude_code=1
+                ;;
+            --only-codex)
+                only_codex=1
+                ;;
+            --only-pi)
+                only_pi=1
+                ;;
             --dry-run)
                 dry_run=1
                 ;;
@@ -471,14 +486,25 @@ require_command bash
 require_command sh
 require_command mktemp
 
-step "Ensuring Claude Code is installed"
-ensure_claude
+only_agents_requested=0
+if [ "$only_claude_code" -eq 1 ] || [ "$only_codex" -eq 1 ] || [ "$only_pi" -eq 1 ]; then
+    only_agents_requested=1
+fi
 
-step "Ensuring Codex is installed"
-ensure_codex
+if [ "$only_agents_requested" -eq 0 ] || [ "$only_claude_code" -eq 1 ]; then
+    step "Ensuring Claude Code is installed"
+    ensure_claude
+fi
 
-step "Ensuring Pi is installed"
-ensure_pi
+if [ "$only_agents_requested" -eq 0 ] || [ "$only_codex" -eq 1 ]; then
+    step "Ensuring Codex is installed"
+    ensure_codex
+fi
+
+if [ "$only_agents_requested" -eq 0 ] || [ "$only_pi" -eq 1 ]; then
+    step "Ensuring Pi is installed"
+    ensure_pi
+fi
 
 step "Ensuring uv $MIN_UV_VERSION or newer is installed"
 ensure_uv

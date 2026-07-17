@@ -71,6 +71,41 @@ Windows PowerShell:
 
 Re-run the same command whenever you want to update. You can review the installers before running them: [install.sh](scripts/install.sh) and [install.ps1](scripts/install.ps1).
 
+<details>
+<summary><strong>Install only one coding agent</strong></summary>
+
+By default the installer checks and installs Claude Code, Codex, and Pi. Pass one or more `--only-*` / `-Only*` flags to skip the rest.
+
+macOS/Linux:
+
+```bash
+# Claude Code only
+curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/install.sh" | sh -s -- --only-claude-code
+
+# Codex only
+curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/install.sh" | sh -s -- --only-codex
+
+# Pi only
+curl -fsSL "https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/install.sh" | sh -s -- --only-pi
+```
+
+Windows PowerShell:
+
+```powershell
+# Claude Code only
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/install.ps1"))) -OnlyClaudeCode
+
+# Codex only
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/install.ps1"))) -OnlyCodex
+
+# Pi only
+& ([scriptblock]::Create((irm "https://raw.githubusercontent.com/Alishahryar1/free-claude-code/main/scripts/install.ps1"))) -OnlyPi
+```
+
+Combine multiple `--only-*` / `-Only*` flags to install more than one agent while still skipping the rest, for example `-OnlyClaudeCode -OnlyPi` to skip Codex.
+
+</details>
+
 ### 2. Start The Server
 
 ```bash
